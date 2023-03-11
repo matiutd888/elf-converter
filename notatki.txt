@@ -1,0 +1,1 @@
+1. przeiteruj po sekcjach i usuń te o nazwie .note.gnu property *.eh_frame
