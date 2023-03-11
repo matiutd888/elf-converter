@@ -5,3 +5,5 @@ cmake_minimum_required (VERSION 2.8.11)
 # the project's entire directory structure.
 add_subdirectory (elfio-3.11)
 add_subdirectory (src)
+add_subdirectory (capstone)
+add_subdirectory (keystone)

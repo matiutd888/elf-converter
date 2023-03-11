@@ -1,4 +1,6 @@
 /**/cmake-build-debug
 /**/.idea
 *.tar.gz
-
+keystone
+capstone
+elfio-3.11
