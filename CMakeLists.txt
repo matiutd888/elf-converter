@@ -1,4 +1,5 @@
-cmake_minimum_required (VERSION 2.8.11)
+project(ConverterProject)
+cmake_minimum_required (VERSION 2.8)
 
 # Recurse into the "Hello" and "Demo" subdirectories. This does not actually
 # cause another cmake executable to run. The same process will walk through
@@ -6,4 +7,3 @@ cmake_minimum_required (VERSION 2.8.11)
 add_subdirectory (elfio-3.11)
 add_subdirectory (src)
 add_subdirectory (capstone)
-add_subdirectory (keystone)
