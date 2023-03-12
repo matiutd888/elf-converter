@@ -1,1 +1,14 @@
 1. przeiteruj po sekcjach i usuń te o nazwie .note.gnu property *.eh_frame
+
+"dla własnych symboli należy dostosować ich wartość (i rozmiar w przypadku STT_FUNC) zgodnie z ich położeniem w sekcji wyjściowego pliku" <--- o co chodzi??
+2. muszę rozpoznawać które symnbole są własne które nie.
+
+3. czy jak zmieniam rozmiar funkcji to powinienem też zmienić rozmiar sekcji??? no chyba cnie
+
+rozumiem że sekcje mi się zmienią
+
+TODO klasa która będzie zbierać wszyustkie dane i te functionConverter będą jej atrybutami
+
+1. zczytaj wszystkie sekcje
+2. zwiąż symbole z sekcjami
+3. zwiąż relokacje z sekcjami
