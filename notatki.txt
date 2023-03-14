@@ -7,8 +7,48 @@
 
 rozumiem że sekcje mi się zmienią
 
-TODO klasa która będzie zbierać wszyustkie dane i te functionConverter będą jej atrybutami
-
 1. zczytaj wszystkie sekcje
 2. zwiąż symbole z sekcjami
 3. zwiąż relokacje z sekcjami
+
+sekcje nie mają adresów w plikach REL :)
+
+jak działają relokacje w ET_REL
+r_offset - offset od sekcji w której jestem
+r_info - indeks symbolu oraz typ relokacji
+r_addend - jakieś gówno dodatkowe xDD
+
+
+jak działają symbole w ET_REL
+STN_UNDEF - niezdefiniowany symbol
+jak działają relokacje do STN_UNDEF:
+"If the index is STN_UNDEF,
+ the undefined symbol index, the relocation uses 0 as the ‘‘symbol value.’’"
+
+st_value - offset w sekcji adrssu symbolu
+st_size - wiadomo
+st_info - typ symbolu oraz binding attributes (local, global, weak)
+st_shndx - indeks sekcji w której jest zdefiniowany (może być UNDEF)
+
+TODO WAŻNE - czy musze przejmować się jakoś typ typem relokacji? pomyślec o tym
+
+TODO jak działają skoki oraz calle w ARMie
+
+OFFTOP
+
+0. wołamy putsa
+1. jest puts w .plt wygenerowany
+2. jest w nim skok do miejsca w .plt który
+3. relokacja do miejsca w .got.plt
+
+1. wołamy puts
+2. lądujemy w miejscu, które bierze cos pod adresem który jest w gotcie
+3.
+
+
+GOT zawiera adresu zewnętrznych adresów którą wypełnia linker dynamiczxny
+
+Q: jak to jest
+niby mamy PICa, ale shardkodowane są adresy wirtualne danych relokacji
+odpowiedź - te adresy wirtualne są relatywne!
+i w takim razie można ją załadować gdziekolwiek. najs

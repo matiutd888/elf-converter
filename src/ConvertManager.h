@@ -21,6 +21,10 @@ class Symbol {
 public:
     std::string name;
     // Address in section
+//    In relocatable files, st_value holds alignment constraints for a symbol whose section index is
+//    SHN_COMMON.
+//    In relocatable files, st_value holds a section offset for a defined symbol. That is, st_value is an
+//    offset from the beginning of the section that st_shndx identifies.
     Elf64_Addr value;
     Elf_Xword size;
     unsigned char bind;
@@ -36,6 +40,9 @@ public:
     }
 };
 
+
+// TODO write this class
+// TODO think about jumps
 class Relocation {
 
 };
@@ -51,7 +58,7 @@ public:
 
     SectionManager() = default;
 
-    void addOriginalSymbol(const Symbol &symbol) {
+    void addSymbol(const Symbol &symbol) {
         originalSymbolsInSection.push_back(symbol);
     }
 };
@@ -76,8 +83,7 @@ public:
 class ConvertManager {
     elfio fileToConvert;
     elfio writer;
-    std::map<size_t, SectionManager> newSections;
-    std::vector<section *> original_sections;
+    std::map<size_t, SectionManager> sectionManagers;
     std::vector<Symbol> globalSymbols;
     SymbolSectionManager symbolSectionManager;
     RelocationSectionManager relocationSectionManager;
@@ -117,29 +123,43 @@ public:
             // Access section's data
             const char *p = fileToConvert.sections[i]->get_data();
 
+            // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
+            // There can be only one SYMTAB table
             if (psec->get_type() == SHT_SYMTAB) {
                 symbolSection = psec;
-                const symbol_section_accessor symbols(fileToConvert, psec);
-                for (unsigned int j = 0; j < symbols.get_symbols_num(); ++j) {
-
-                    Symbol s;
-                    Elf_Half sectionIndex;
-                    symbols.get_symbol(j, s.name, s.value, s.size, s.bind,
-                                       s.type, sectionIndex, s.other);
-                    if (Symbol::isGlobal(sectionIndex)) {
-                        std::cout << "symbol is global, will not do anything" << std::endl;
-                    }
-
-                    std::cout << j << " " << s.name << std::endl;
-                }
             } else if (psec->get_type() == SHT_RELA) {
                 relocationSection = psec;
             } else if (isSkipable(psec->get_name())) {
                 // TODO pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
-                newSections[i] = SectionManager(psec, writer.sections.add(psec->get_name()));
+                sectionManagers[i] = SectionManager(psec, writer.sections.add(psec->get_name()));
             }
         }
+        addSymbolsToSectionManager(symbolSection);
     };
+
+
+    void addSymbolsToSectionManager(section *symbolSection) {
+        const symbol_section_accessor symbols(fileToConvert, symbolSection);
+        for (unsigned int j = 0; j < symbols.get_symbols_num(); ++j) {
+            Symbol s;
+            Elf_Half sectionIndex;
+            symbols.get_symbol(j, s.name, s.value, s.size, s.bind,
+                               s.type, sectionIndex, s.other);
+            if (Symbol::isGlobal(sectionIndex)) {
+                std::cout << "symbol is global, will not do anything" << std::endl;
+                globalSymbols.push_back(s);
+            } else {
+                sectionManagers[sectionIndex].addSymbol(s);
+            }
+            std::cout << j << " " << s.name << std::endl;
+        }
+        symbolSectionManager = SymbolSectionManager(
+                SectionManager(symbolSection, writer.sections.add(symbolSection->get_name())));
+    }
+
+    void addRelocationsToRelocationManager(section *relocationSection) {
+        const relocation_section_accessor relocationSectionAccessor(fileToConvert, relocationSection);
+    }
 };
 
 #endif //CONVERTERPROJECT_CONVERTMANAGER_H
