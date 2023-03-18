@@ -151,7 +151,7 @@ class ConvertManager {
         return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
     }
 
-    static bool isSkipable(const std::string &sectionName) {
+    static bool isSkippable(const std::string &sectionName) {
         return sectionName == ".note.gnu.property" || ends_with(sectionName, ".eh_frame");
     }
 
@@ -170,51 +170,6 @@ class ConvertManager {
         assert(relocationName.substr(0, 5) == ".rela");
         return relocationName.substr(5);
     }
-
-public:
-    explicit ConvertManager(const std::string &path) {
-        if (!fileToConvert.load(path)) {
-            zerror("Couldn't find or process file");
-        }
-        if (!FileChecker::checkFile(fileToConvert)) {
-            zerror("Error during checks on file");
-        }
-        parseSections();
-        // Access section's data
-    }
-
-    void parseSections() {
-        m_debug << "Parsing begin" << std::endl;
-        Elf_Half sec_num = fileToConvert.sections.size();
-
-        // TODO associate all symbols and relocations with appropriate sections
-        section *symbolSection;
-        std::vector<section *> relocationSectionsToParse;
-        m_debug << "Number of sections: " << sec_num << std::endl;
-        for (int i = 0; i < sec_num; ++i) {
-            section *psec = fileToConvert.sections[i];
-            m_debug << " [" << i << "] " << psec->get_name() << "\t" << psec->get_size() << std::endl;
-            // Access section's data
-            const char *p = fileToConvert.sections[i]->get_data();
-
-            // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
-            // There can be only one SYMTAB table
-            if (psec->get_type() == SHT_SYMTAB) {
-                symbolSection = psec;
-            } else if (psec->get_type() == SHT_RELA) {
-                relocationSectionsToParse.push_back(psec);
-            } else if (!isSkipable(psec->get_name())) {
-                // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
-                sectionManagers[i] = SectionManager(psec, writer.sections.add(psec->get_name()));
-            }
-        }
-
-
-        addSymbolsToSectionManager(symbolSection);
-        for (auto r: relocationSectionsToParse) {
-            addRelocationsToRelocationManager(r);
-        }
-    };
 
 
     void addSymbolsToSectionManager(section *symbolSection) {
@@ -265,6 +220,55 @@ public:
         }
 
         sectionManagers[index].setRelocations(relocations);
+    }
+
+    void parseSections() {
+        m_debug << "Parsing begin" << std::endl;
+        Elf_Half sec_num = fileToConvert.sections.size();
+
+        // TODO associate all symbols and relocations with appropriate sections
+        section *symbolSection;
+        std::vector<section *> relocationSectionsToParse;
+        m_debug << "Number of sections: " << sec_num << std::endl;
+        for (int i = 0; i < sec_num; ++i) {
+            section *psec = fileToConvert.sections[i];
+            m_debug << " [" << i << "] " << psec->get_name() << "\t" << psec->get_size() << std::endl;
+            // Access section's data
+            const char *p = fileToConvert.sections[i]->get_data();
+
+            // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
+            // There can be only one SYMTAB table
+            if (psec->get_type() == SHT_SYMTAB) {
+                symbolSection = psec;
+            } else if (psec->get_type() == SHT_RELA) {
+                relocationSectionsToParse.push_back(psec);
+            } else if (!isSkippable(psec->get_name())) {
+                // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
+                sectionManagers[i] = SectionManager(psec, writer.sections.add(psec->get_name()));
+            }
+        }
+        addSymbolsToSectionManager(symbolSection);
+        for (auto r: relocationSectionsToParse) {
+            addRelocationsToRelocationManager(r);
+        }
+        m_debug << "Section parsing ended" << std::endl;
+    }
+
+    void convertSections() {
+
+    }
+
+public:
+    explicit ConvertManager(const std::string &path) {
+        if (!fileToConvert.load(path)) {
+            zerror("Couldn't find or process file");
+        }
+        if (!FileChecker::checkFile(fileToConvert)) {
+            zerror("Error during checks on file");
+        }
+        parseSections();
+        convertSections();
+        // Access section's data
     }
 };
 
