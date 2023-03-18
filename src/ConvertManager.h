@@ -8,6 +8,7 @@
 
 #include <elfio/elfio.hpp>
 #include <map>
+#include <cassert>
 
 using namespace ELFIO;
 
@@ -40,26 +41,48 @@ public:
     }
 };
 
-
-// TODO write this class
 // TODO think about jumps
 class Relocation {
+public:
+    Elf64_Addr offset;
+    Elf_Word symbol;
+    unsigned type;
+    Elf_Sxword addend;
 
+    Relocation() = default;
 };
 
+struct SectionData {
+    section *section = nullptr;
+    std::vector<Symbol> symbols;
+    std::vector<Relocation> relocations;
+};
+
+
 class SectionManager {
-    section *newSection;
-    section *originalSection;
-    std::vector<Symbol> originalSymbolsInSection;
-    std::vector<Relocation> relocationsInSection;
+    SectionData originalSectionData;
+    SectionData newSectionData;
 public:
-    explicit SectionManager(section *originalSection, section *newSection) : originalSection(originalSection),
-                                                                             newSection(newSection) {}
+    explicit SectionManager(section *originalSection, section *newSection) {
+        originalSectionData.section = originalSection;
+        newSectionData.section = newSection;
+    }
 
     SectionManager() = default;
 
     void addSymbol(const Symbol &symbol) {
-        originalSymbolsInSection.push_back(symbol);
+        originalSectionData.symbols.push_back(symbol);
+    }
+
+    void setRelocations(const std::vector<Relocation> &relocations) {
+        originalSectionData.relocations = relocations;
+    }
+
+    std::string getName() const {
+        if (originalSectionData.section == nullptr) {
+            perror("Coudln't get section name as it hasn't been initialized");
+        }
+        return originalSectionData.section->get_name();
     }
 };
 
@@ -71,22 +94,13 @@ public:
     SymbolSectionManager() = default;
 };
 
-class RelocationSectionManager {
-    SectionManager s;
-public:
-    explicit RelocationSectionManager(const SectionManager &s) : s(s) {};
-
-    RelocationSectionManager() = default;
-};
-
-
 class ConvertManager {
     elfio fileToConvert;
     elfio writer;
-    std::map<size_t, SectionManager> sectionManagers;
+    // Indexes in original section header;
+    std::map<Elf_Half, SectionManager> sectionManagers;
     std::vector<Symbol> globalSymbols;
     SymbolSectionManager symbolSectionManager;
-    RelocationSectionManager relocationSectionManager;
 
 //    https://stackoverflow.com/questions/874134/find-out-if-string-ends-with-another-string-in-c
     inline static bool ends_with(std::string const &value, std::string const &ending) {
@@ -96,6 +110,21 @@ class ConvertManager {
 
     static bool isSkipable(const std::string &sectionName) {
         return sectionName == ".note.gnu.property" || ends_with(sectionName, ".eh_frame");
+    }
+
+    int64_t identifySectionByName(const std::string &sectionName) const {
+        for (const auto &sectionEntry: sectionManagers) {
+            if (sectionEntry.second.getName() == sectionName) {
+                return sectionEntry.first;
+            }
+        }
+        std::cerr << "Couldn't identify section by name" << std::endl;
+        return -1;
+    }
+
+    static std::string getSectionNameFromRelocationSectionName(const std::string &relocationName) {
+        assert(relocationName.substr(0, 5) == ".rela");
+        return relocationName.substr(5);
     }
 
 public:
@@ -115,7 +144,7 @@ public:
 
         // TODO associate all symbols and relocations with appropriate sections
         section *symbolSection;
-        section *relocationSection;
+        std::vector<section *> relocationSectionsToParse;
         std::cout << "Number of sections: " << sec_num << std::endl;
         for (int i = 0; i < sec_num; ++i) {
             section *psec = fileToConvert.sections[i];
@@ -128,13 +157,17 @@ public:
             if (psec->get_type() == SHT_SYMTAB) {
                 symbolSection = psec;
             } else if (psec->get_type() == SHT_RELA) {
-                relocationSection = psec;
+                relocationSectionsToParse.push_back(psec);
             } else if (isSkipable(psec->get_name())) {
                 // TODO pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
                 sectionManagers[i] = SectionManager(psec, writer.sections.add(psec->get_name()));
             }
         }
+
         addSymbolsToSectionManager(symbolSection);
+        for (auto r: relocationSectionsToParse) {
+            addRelocationsToRelocationManager(r);
+        }
     };
 
 
@@ -143,8 +176,10 @@ public:
         for (unsigned int j = 0; j < symbols.get_symbols_num(); ++j) {
             Symbol s;
             Elf_Half sectionIndex;
-            symbols.get_symbol(j, s.name, s.value, s.size, s.bind,
-                               s.type, sectionIndex, s.other);
+            if (!symbols.get_symbol(j, s.name, s.value, s.size, s.bind,
+                                    s.type, sectionIndex, s.other)) {
+                perror("Error getting symbol entry");
+            }
             if (Symbol::isGlobal(sectionIndex)) {
                 std::cout << "symbol is global, will not do anything" << std::endl;
                 globalSymbols.push_back(s);
@@ -159,6 +194,17 @@ public:
 
     void addRelocationsToRelocationManager(section *relocationSection) {
         const relocation_section_accessor relocationSectionAccessor(fileToConvert, relocationSection);
+        std::vector<Relocation> relocations;
+        for (int i = 0; i < relocationSectionAccessor.get_entries_num(); i++) {
+            Relocation r{};
+            if (!relocationSectionAccessor.get_entry(i, r.offset, r.symbol, r.type, r.addend)) {
+                perror("Error getting relocation entry");
+            }
+            relocations.push_back(r);
+        }
+
+        auto index = identifySectionByName(getSectionNameFromRelocationSectionName(relocationSection->get_name()));
+        sectionManagers[index].setRelocations(relocations);
     }
 };
 

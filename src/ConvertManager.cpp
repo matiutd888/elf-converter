@@ -4,14 +4,12 @@
 
 #include "ConvertManager.h"
 
-elfio ConvertManager::convert(elfio file) {
-    return elfio();
-}
-
+//elfio ConvertManager::convert(elfio file) {
+//    return elfio();
+//}
+//
 bool FileChecker::checkFile(const elfio &file) {
     return true;
 }
-
-RelocationSectionManager::RelocationSectionManager(const SectionManager &s) }
-
-SymbolSectionManager::SymbolSectionManager(const SectionManager &s) : s(s) {}
+//
+//SymbolSectionManager::SymbolSectionManager(const SectionManager &s) : s(s) {}
