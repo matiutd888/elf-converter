@@ -2,6 +2,7 @@
 #include <elfio/elfio.hpp>
 #include <capstone/capstone.h>
 #include <keystone/keystone.h>
+#include "ConvertManager.h"
 
 using namespace ELFIO;
 
@@ -10,16 +11,13 @@ int main(int argc, char **argv) {
         std::cout << "Usage: tutorial <elf_file>" << std::endl;
         return 1;
     }
+//    elfio reader;
 
-    elfio reader;
+//    if (!reader.load(argv[1])) {
+//        std::cout << "Can't find or process ELF file " << argv[1] << std::endl;
+//    }
+//
+//    std::cout << reader.get_elf_version() << std::endl;
 
-    if (!reader.load(argv[1])) {
-        std::cout << "Can't find or process ELF file " << argv[1] << std::endl;
-    }
-
-
-    std::cout << reader.get_elf_version() << std::endl;
-
-        // 1. przeiteruj po sekcjach i usuń te o nazwie .note.gnu property *.eh_frame
-        //
+    ConvertManager manager(argv[1]);
 }

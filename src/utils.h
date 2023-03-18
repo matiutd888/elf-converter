@@ -38,7 +38,7 @@ public:
     }
 };
 
-void perror(const char *errorMessage) {
+inline void zerror(const char *errorMessage) {
     std::cerr << errorMessage << std::endl;
     exit(1);
 }
