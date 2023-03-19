@@ -12,6 +12,12 @@
 
 using word_t = char;
 
+
+inline void zerror(const char *errorMessage) {
+    std::cerr << errorMessage << std::endl;
+    exit(1);
+}
+
 class CapstoneUtils {
     csh handle;
     uint64_t DEFAULT_START_ADDRESS = 0;
@@ -28,8 +34,7 @@ public:
         if (count > 0) {
             return count;
         } else {
-            std::cerr << "No instruction were disassembled" << std::endl;
-            exit(1);
+            zerror("No instruction were disassembled");
         }
     }
 
@@ -37,8 +42,3 @@ public:
         cs_close(&handle);
     }
 };
-
-inline void zerror(const char *errorMessage) {
-    std::cerr << errorMessage << std::endl;
-    exit(1);
-}

@@ -16,6 +16,8 @@ using namespace ELFIO;
 
 #define m_debug (std::cout << "DEBUG: ")
 #define m_warn (std::cout << "WARN: ")
+#define todo(S) (zerror("TODO" S))
+
 
 class FileChecker {
 public:
@@ -26,7 +28,7 @@ struct Symbol {
 private:
     static constexpr Elf_Word specialUnhandledSections[1] = {
             SHN_COMMON
-    };
+};
 public:
     std::string name;
     // Address in section
@@ -93,6 +95,77 @@ public:
     }
 };
 
+#define strEqual(I, J) (strcmp((I), (J)) == 0)
+
+class FunctionData {
+    const int PROLOGUE_SIZE = 3;
+    const int EPILOGUE_SIZE = 2;
+
+    std::vector<char> raw;
+
+    CapstoneUtils utils;
+    cs_insn *insn;
+    size_t numberOfInstructions;
+
+    bool converted;
+    std::vector<char *> convertedBytes;
+    std::vector<std::string> armInstructions;
+
+
+    // TODO nie obsługuję skoczenia do ŚRODKA prologu (umiem skoczyć jedynie na początek)
+    void convertPrologue() {
+        assert(strEqual(insn[0].mnemonic, "endbr64"));
+        assert(strEqual(insn[1].mnemonic, "push") && strEqual(insn[1].op_str, "rbp"));
+        assert(strEqual(insn[2].mnemonic, "mov") && strEqual(insn[2].op_str, "rbp, rsp"));
+
+        armInstructions.push_back("stp x29, x30, [sp, #-16]!\n"
+                                  "mov x29, sp");
+    }
+
+    // TODO nie obsługuję skoczenia do ŚRODKA epilogu (umiem skoczyć jedynie na początek)
+    void convertEpilogue() {
+        assert(strEqual(insn[numberOfInstructions - 2].mnemonic, "leave"));
+        assert(strEqual(insn[numberOfInstructions - 1].mnemonic, "ret"));
+
+        armInstructions.push_back("mov x0, x9\n"
+                                  "add sp, x29, #16\n"
+                                  "ldp x29, x30, [sp, #-16]\n"
+                                  "ret");
+    }
+
+public:
+    FunctionData(const char *rawData, size_t size) {
+        raw.insert(raw.begin(), rawData, rawData + size);
+        numberOfInstructions = utils.disassemble(reinterpret_cast<const uint8_t *>(raw[0]), raw.size(), insn);
+        converted = false;
+    }
+
+
+    void convertInstruction(cs_insn *insn) {
+
+    }
+
+    std::vector<Relocation> convert(std::vector<Relocation> relatedRelocations) {
+        convertPrologue();
+        for (int i = PROLOGUE_SIZE; i < numberOfInstructions - EPILOGUE_SIZE; i++) {
+            todo("Check if relocation is in this instruction");
+
+            convertInstruction(&insn[i]);
+        }
+        convertEpilogue();
+        todo("Use capstone to be able to answer queries about addresses");
+        convertEpilogue();
+    }
+
+
+    size_t getNewAddress(size_t oldAddress) {
+        if (!converted) {
+            zerror("Function hasn't been converted yet");
+        }
+        todo("Implement");
+    }
+};
+
 struct SectionData {
     section *s;
     std::vector<Symbol> symbols;
@@ -103,6 +176,8 @@ struct SectionData {
 class SectionManager {
     SectionData originalSectionData;
     SectionData newSectionData;
+    std::vector<FunctionData> functions;
+    std::vector<std::vector<Relocation>> functionsRelocations;
 public:
     explicit SectionManager(section *originalSection, section *newSection) {
         originalSectionData.s = originalSection;
@@ -124,6 +199,45 @@ public:
             zerror("Couldn't get section name as it hasn't been initialized");
         }
         return originalSectionData.s->get_name();
+    }
+
+    void convertFunction(const Symbol &symbol, std::vector<Relocation> relatedRelocations) {
+        // get function data
+        auto fAddress = symbol.value;
+        auto fSize = symbol.size;
+
+        // Skoki są zawsze w obrębie funkcji :) Więc jest gitt
+
+        FunctionData fData(&originalSectionData.s->get_data()[fAddress], fSize);
+
+        auto rel = fData.convert(relatedRelocations);
+        functions.push_back(fData);
+        functionsRelocations.push_back(rel);
+    }
+
+    void convertFunctions() {
+        std::sort(originalSectionData.symbols.begin(), originalSectionData.symbols.end(),
+                  [](Symbol s1, Symbol s2) -> bool {
+                      return s1.value < s2.value;
+                  });
+        std::sort(originalSectionData.relocations.begin(), originalSectionData.relocations.end(),
+                  [](Relocation r1, Relocation r2) -> bool {
+                      return r1.offset < r2.offset;
+                  });
+
+        for (const auto &symbol: originalSectionData.symbols) {
+            if (symbol.type == STT_FUNC) {
+                std::vector<Relocation> relatedRelocations;
+                todo("Get related relocastions");
+                convertFunction(symbol, relatedRelocations);
+            } else {
+                // TODO czy adresy symboli innych niż funkcje to może być
+                // Rozumiem że adres funkcji może się zmienić
+                // Ale czy może zmienić się adres czegoś innego niż
+            }
+        }
+
+        todo("Construct section content from converted functions");
     }
 };
 
@@ -202,7 +316,8 @@ class ConvertManager {
         m_debug << "handling relocation section " << relocationSection->get_name() << std::endl;
         auto index = identifySectionByName(getSectionNameFromRelocationSectionName(relocationSection->get_name()));
         if (index < 0) {
-            m_warn << "couldn't find section that the relocation section " << relocationSection->get_name() << " relate to" << std::endl;
+            m_warn << "couldn't find section that the relocation section " << relocationSection->get_name()
+                   << " relate to" << std::endl;
             return;
         }
 
@@ -233,8 +348,6 @@ class ConvertManager {
         for (int i = 0; i < sec_num; ++i) {
             section *psec = fileToConvert.sections[i];
             m_debug << " [" << i << "] " << psec->get_name() << "\t" << psec->get_size() << std::endl;
-            // Access section's data
-            const char *p = fileToConvert.sections[i]->get_data();
 
             // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
             // There can be only one SYMTAB table
@@ -255,7 +368,11 @@ class ConvertManager {
     }
 
     void convertSections() {
+        // 1. run capstone on each section data
+        // 2. start converting one by one and updating details
+        // There is need for interface that takes an address of instruction beforehand nad converts it to address to instruction after
 
+        // tabela rozmiarów instrukcji
     }
 
 public:
