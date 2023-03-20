@@ -14,3 +14,4 @@ bool FileChecker::checkFile(const elfio &file) {
 //
 //SymbolSectionManager::SymbolSectionManager(const SectionManager &s) : s(s) {}
 FunctionData::FunctionData() {}
+

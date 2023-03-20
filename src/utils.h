@@ -27,6 +27,9 @@ public:
             std::cerr << "Error creating cs handle" << std::endl;
             exit(1);
         }
+        if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON)) {
+            zerror("Error turining on cs opt detail");
+        } // turn ON detail feature with CS_OPT_ON
     }
 
     size_t disassemble(const uint8_t *code, size_t code_size, cs_insn *insn) {
