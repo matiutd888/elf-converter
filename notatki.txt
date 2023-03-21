@@ -1,6 +1,6 @@
 PLAN TESTOWANIA
 1. przetestować czy działa mi iterowanie po funkcjach i łączenie symboli oraz relokacji z odpowiednimi funkcjami
-
+2. zunit testować działanie convertera
 
 
 1. przeiteruj po sekcjach i usuń te o nazwie .note.gnu property *.eh_frame

@@ -103,8 +103,7 @@ namespace assemblyUtils {
     const int ARM_INSTRUCTION_SIZE_BYTES = 32;
     std::string prefix64 = "x";
     std::string prefix32 = "w";
-    std::string tmp1 = "12";
-    std::string tmp2 = "13";
+    std::string tmp[2] = {"12", "13"};
 
     const std::map<std::string, std::string> registerMaps64 = {
             {"rdi", "x0"},
@@ -156,6 +155,41 @@ namespace assemblyUtils {
         ImmediateMode,
         MemoryMode
     };
+
+    enum MemSize {
+        MEM32,
+        MEM64
+    };
+
+    std::string getTmpKindFromFullTmp(const std::string &t) {
+        return t.substr(t.size() - 2, 2);
+    }
+
+    bool tmpGetKind(const std::string &t) {
+        // God forgive me for this code.
+        if (t == tmp[0]) {
+            return 0;
+        } else if (t == tmp[1]) {
+            return 1;
+        }
+        zerror("Wrong tmp");
+    }
+
+    MemSize getMemOpSize(x86_op_mem m) {
+        todo("Learn how to deduce mem op size");
+        return MemSize::MEM64;
+    }
+
+    std::string getTmpRegByMemOpSize(MemSize s, bool tmpNumper) {
+        std::string pref;
+        switch (s) {
+            case MEM32:
+                pref = prefix32;
+            case MEM64:
+                pref = prefix64;
+        }
+        return pref + tmp[tmpNumper];
+    }
 }
 
 //class AddressesCollector {
@@ -204,49 +238,165 @@ namespace assemblyUtils {
 //      1.2 jeżeli mem dotyczy
 // 2. na jaki bajt przekoczy relokacja
 // mov [rel],
-struct ConvertedInstruction {
+struct ArmInstructionStub {
     std::string content;
     size_t size;
     // !IMPORTANT Will have offsets relative to instruction address, not function address!
     std::vector<Relocation> changedRelocations;
 };
 
+class InstructionBuilder {
+    // God forvie me for O(n^2) complexity of this code
+    std::string ret;
+
+public:
+    InstructionBuilder(const std::string &s) : ret(s) {}
+
+    InstructionBuilder append(const std::string &s) {
+        InstructionBuilder(ret + "\n" + s);
+    }
+
+    std::string build() {
+        return ret;
+    }
+};
+
 namespace InstructionConverter {
+    void commonMemAsserts(x86_op_mem mem) {
+        assert(mem.index == 0);
+    }
+
+
     std::string mapRegister(x86_reg reg) {
         todo("Implement");
         return "";
+    }
+
+    std::string convertImmidiate(int64_t value) {
+        return "#" + std::to_string(value);
     }
 
     std::string convert(cs_x86_op op) {
         if (op.type == x86_op_type::X86_OP_REG) {
             return mapRegister(op.reg);
         } else if (op.type == x86_op_type::X86_OP_IMM) {
-            return std::to_string(op.imm);
+            return convertImmidiate(op.imm);
         } else {
             todo("Unable to convert mem");
         }
     }
 
-    ConvertedInstruction handleAdd(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
-        auto detail = ins->detail;
-        assert(detail->x86.op_count == 2);
-        assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
-        assert(relatedRelocations.size() == 0);
-
-        auto c = ConvertedInstruction{
-                .content = "add " + InstructionConverter::convert(detail->x86.operands[0]) + ", " +
-                           InstructionConverter::convert(detail->x86.operands[1]),
-                .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES,
+    ArmInstructionStub convertNonRelocableMemOperand(bool tmp1Kind, x86_op_mem op, std::string reg) {
+        std::string tmp164 = assemblyUtils::prefix64 + assemblyUtils::tmp[tmp1Kind];
+        return ArmInstructionStub{
+                .content = InstructionBuilder("mov " + tmp164 + ", " + convertImmidiate(op.disp))
+                        .append("ldr " + reg + ", " + "[" + mapRegister(op.base) + ", " + tmp164 + "]")
+                        .build(),
+                .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2,
         };
-        return c;
     }
 
-    ConvertedInstruction convertInstruction(cs_insn *ins, std::vector<Relocation> relatedRelocations) {
-        ConvertedInstruction ret;
+    namespace cmpHandler {
+
+        ArmInstructionStub readOp1ToTmp1(std::vector<Relocation> &relocations, std::string tmp1, cs_insn *ins) {
+            // cmp op1
+            x86_op_mem op1 = ins->detail->x86.operands[0].mem;
+            commonMemAsserts(op1);
+            ArmInstructionStub ret;
+            switch (op1.base) {
+                case X86_REG_RIP:
+                    // 4, 5, 6, 7 bajt to będzie ta relokacja
+                    assert(relocations[0].offset - ins->size == 3);
+                    assert(relocations[0].type == R_X86_64_PC32 || relocations[1].type == R_X86_64_PLT32);
+                    todo("Przekonwertowaźć tę relokację na R_AARCH64_LD_PREL_LO19");
+
+                    // Jeśli baza to rip, należy założyć, że przesunięcie ma relokację typu R_X86_64_PC32 lub R_X86_64_PLT32.
+                    // Należy przekonwertować ją na relokację typu R_AARCH64_LD_PREL_LO19 i wygenerować następujący kod (znak @ oznacza komentarz):
+
+                    break;
+                default:
+                    ret = convertNonRelocableMemOperand(1, op1, tmp1);
+            }
+            return ret;
+        }
+
+        ArmInstructionStub handleCmpMem(cs_insn *ins, std::vector<Relocation> &relatedRelocations) {
+            x86_op_mem m = ins->detail->x86.operands[0].mem;
+            std::string tmp = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::getMemOpSize(m), 0);
+            auto c = readOp1ToTmp1(relatedRelocations, tmp, ins);
+        }
+
+        // !IMPORTANT !PAMIĘTAĆ O PRZEKAZYWANIU PRZEZ REFERENCJĘ
+        // TODO usuwanioe i przekazywanie relokacji przez referencję chyba nawet nie jest konieczne.
+        ArmInstructionStub handleCmp(cs_insn *ins, std::vector<Relocation> &relatedRelocations) {
+            auto detail = ins->detail;
+            assert(detail->x86.op_count == 2);
+            assert(relatedRelocations.size() == 0);
+
+            ArmInstructionStub ret;
+            switch (detail->x86.operands[0].type) {
+                case X86_OP_REG:
+                    break;
+                case X86_OP_MEM:
+                    // Popatrz, do jakiej wielkości mem
+                    // wczytaj op
+                    // cmp mem, reg/imm
+                    // cmp {tmp1}, {op2}
+
+                    // co jest możliwe
+                    // cmp mem64, imm32
+                    // trzeba to przetłumaczyć na
+                    // cmp tmp1.32, imm32;
+                    // cmp
+
+                    ret = handleCmpMem(ins, relatedRelocations);
+                    break;
+                default:
+                    zerror("cmp: Invalid operand type");
+            }
+            return ret;
+        }
+    }
+
+
+    namespace arithmeticInstructionHandler {
+        ArmInstructionStub handleAdd(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            auto detail = ins->detail;
+            assert(detail->x86.op_count == 2);
+            assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
+            assert(relatedRelocations.size() == 0);
+
+            auto c = ArmInstructionStub{
+                    .content = "add " + InstructionConverter::convert(detail->x86.operands[0]) + ", " +
+                               InstructionConverter::convert(detail->x86.operands[1]),
+                    .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES,
+            };
+            return c;
+        }
+
+        ArmInstructionStub handleSub(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            auto detail = ins->detail;
+            assert(detail->x86.op_count == 2);
+            assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
+            assert(relatedRelocations.size() == 0);
+
+            auto c = ArmInstructionStub{
+                    .content = "sub " + InstructionConverter::convert(detail->x86.operands[0]) + ", " +
+                               InstructionConverter::convert(detail->x86.operands[1]),
+                    .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES,
+            };
+            return c;
+        }
+    }
+
+    ArmInstructionStub convertInstruction(cs_insn *ins, std::vector<Relocation> relatedRelocations) {
+        ArmInstructionStub ret;
         if (strEqual(ins->mnemonic, "add")) {
-            ret = handleAdd(ins, relatedRelocations);
-        } else {
-            todo("Implement getType");
+            ret = arithmeticInstructionHandler::handleAdd(ins, relatedRelocations);
+        } else if (strEqual(ins->mnemonic, "sub")) {
+            ret = arithmeticInstructionHandler::handleSub(ins, relatedRelocations);
+        } else if (strEqual(ins->mnemonic, "cmp")) {
+            ret = cmpHandler::handleCmp(ins, relatedRelocations);
         }
 
         return ret;
