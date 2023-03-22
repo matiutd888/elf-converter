@@ -147,6 +147,12 @@ namespace assemblyUtils {
         MEM32, MEM64
     };
 
+    enum TmpKind {
+        TMP1 = 0,
+        TMP2 = 1,
+    };
+
+
     bool tmpGetKind(const std::string &kind) {
         // God forgive me for this code.
         if (kind == tmp[0]) {
@@ -162,7 +168,7 @@ namespace assemblyUtils {
         return MemSize::MEM64;
     }
 
-    reg_t getTmpRegByMemOpSize(MemSize s, bool tmpkind) {
+    reg_t getTmpRegByMemOpSize(MemSize s, TmpKind tmpkind) {
         std::string pref;
         switch (s) {
             case MEM32:
@@ -248,7 +254,7 @@ public:
 namespace InstructionConverter {
     void commonMemAsserts(x86_op_mem mem) { assert(mem.index == 0); }
 
-    std::string mapRegister(x86_reg reg) {
+    std::string convertReg(x86_reg reg) {
         todo("Implement");
         return "";
     }
@@ -259,7 +265,7 @@ namespace InstructionConverter {
 
     std::string convert(cs_x86_op op) {
         if (op.type == x86_op_type::X86_OP_REG) {
-            return mapRegister(op.reg);
+            return convertReg(op.reg);
         } else if (op.type == x86_op_type::X86_OP_IMM) {
             return convertImmidiate(op.imm);
         } else {
@@ -273,7 +279,7 @@ namespace InstructionConverter {
         return ArmInstructionStub{
                 .content = InstructionBuilder("mov", tmp164, convertImmidiate(op.disp))
                         .append("ldr", reg,
-                                "[" + mapRegister(op.base) + ", " + tmp164 + "]")
+                                "[" + convertReg(op.base) + ", " + tmp164 + "]")
                         .build(),
                 .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2,
         };
@@ -296,6 +302,8 @@ namespace InstructionConverter {
 // ROZMIAR_INSTRUKCJI_x86 = adresSymbolu  + addend2 addend2 = addend - 3 +
 // ROZMIAR_INSTRUKCJI_x86
 // https://reverseengineering.stackexchange.com/questions/17666/how-does-the-ldr-instruction-work-on-arm
+
+// Wczytaj op do reg
     ArmInstructionStub
     convertRelocableMemOperand(const reg_t &reg, const Relocation &r,
                                size_t operandPositionInInstruction,
@@ -317,8 +325,13 @@ namespace InstructionConverter {
 // if operand is [rip + x], what byte is x in in the instruction
 // example: cmp qword ptr [rip + _], 2137 would have relocation for the byte 3
 // cmp qword ptr [rip + _], 2137 would be having relocation for byte 2
-    ArmInstructionStub readMemOpToTmp(const std::vector<Relocation> &relocations,
-                                      const reg_t &tmp, x86_op_mem op, cs_insn *ins,
+// TODO maybe tmpToUse should ALWAYS be tmp1
+// It doesnt hurt us even when reg is tmp1 probably
+    ArmInstructionStub readMemOpToReg(const std::vector<Relocation> &relocations,
+                                      const reg_t &reg,
+                                      x86_op_mem op,
+                                      cs_insn *ins,
+                                      assemblyUtils::TmpKind tmpToUse, // tmpToUse is index of free tmp register
                                       size_t relocationPositionInInstruction) {
         commonMemAsserts(op);
         ArmInstructionStub ret;
@@ -329,11 +342,10 @@ namespace InstructionConverter {
                 assert(relocations[0].type == R_X86_64_PC32 ||
                        relocations[0].type == R_X86_64_PLT32);
                 ret = convertRelocableMemOperand(
-                        tmp, relocations[0], relocationPositionInInstruction, ins->size);
+                        reg, relocations[0], relocationPositionInInstruction, ins->size);
                 break;
             default:
-                ret =
-                        convertNonRelocableMemOperand(!assemblyUtils::tmpGetKind(tmp), op, tmp);
+                ret = convertNonRelocableMemOperand(tmpToUse, op, reg);
         }
         return ret;
     }
@@ -361,8 +373,12 @@ namespace InstructionConverter {
         handleCmpMem(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
             x86_op_mem m = ins->detail->x86.operands[0].mem;
             auto memOpSize = assemblyUtils::getMemOpSize(m);
-            reg_t tmp = assemblyUtils::getTmpRegByMemOpSize(memOpSize, 0);
-            auto c = readMemOpToTmp(relatedRelocations, tmp, m, ins,
+            reg_t tmp = assemblyUtils::getTmpRegByMemOpSize(memOpSize, assemblyUtils::TMP1);
+            auto c = readMemOpToReg(relatedRelocations,
+                                    tmp,
+                                    m,
+                                    ins,
+                                    assemblyUtils::TMP2,
                                     getPossibleRelocationForCmpOp1(memOpSize));
             c.size += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
             c.content = InstructionBuilder(c.content)
@@ -386,8 +402,12 @@ namespace InstructionConverter {
                 case X86_OP_MEM: {
                     auto m = ins->detail->x86.operands[1].mem;
                     auto memOpSize = assemblyUtils::getMemOpSize(m);
-                    reg_t tmp = assemblyUtils::getTmpRegByMemOpSize(memOpSize, 0);
-                    auto c = readMemOpToTmp(relatedRelocations, tmp, m, ins,
+                    reg_t tmp = assemblyUtils::getTmpRegByMemOpSize(memOpSize, assemblyUtils::TMP1);
+                    auto c = readMemOpToReg(relatedRelocations,
+                                            tmp,
+                                            m,
+                                            ins,
+                                            assemblyUtils::TMP2,
                                             getPossibleRelocationForCmpOp2(memOpSize));
                     c.size += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
                     c.content = InstructionBuilder(c.content)
@@ -428,6 +448,29 @@ namespace InstructionConverter {
 
     namespace movHandler {
 
+        ArmInstructionStub handleMov(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            assert(ins->detail->x86.op_count = 2);
+            switch (ins->detail->x86.operands[0].type) {
+                case x86_op_type::X86_OP_REG: {
+                    switch (ins->detail->x86.operands[1].type) {
+                        case x86_op_type::X86_OP_MEM:
+                            return readMemOpToReg(relatedRelocations,
+                                                  convertReg(ins->detail->x86.operands[0].reg),
+                                                  ins->detail->x86.operands[1].mem,
+                                                  ins,
+                                                  assemblyUtils::TMP1,
+                                                  2
+                            );
+                        case x86_op_type::X86_OP_IMM, x86_op_type::X86_OP_REG:
+                            todo("implement this shit");
+
+                    }
+                }
+
+            }
+
+            return ArmInstructionStub();
+        }
     }
 
     namespace callHandler {
@@ -512,7 +555,11 @@ namespace InstructionConverter {
             ret = arithmeticInstructionHandler::handleSub(ins, relatedRelocations);
         } else if (strEqual(ins->mnemonic, "cmp")) {
             ret = cmpHandler::handleCmp(ins, relatedRelocations);
-        } else if (strEqual(ins->mnemonic))
+        } else if (strEqual(ins->mnemonic, "call")) {
+            ret = callHandler::handleCall(ins, relatedRelocations);
+        } else if (strEqual(ins->mnemonic, "mov")) {
+            ret = movHandler::handleMov(ins, relatedRelocations);
+        }
 
         return ret;
     }
