@@ -55,15 +55,12 @@ public:
     }
 
     static bool isSpecial(Elf_Half sectionIndex) {
-        for (auto specialIndex: specialUnhandledSections) {
-            if (specialIndex == sectionIndex) {
-                return true;
-            }
-        }
-        return false;
+        std::ranges::any_of(specialUnhandledSections, [sectionIndex](Elf_Word x) -> bool {
+            return x == sectionIndex;
+        });
     }
 
-    bool isFunction() {
+    bool isFunction() const {
         return type == STT_FUNC;
     }
 
@@ -98,6 +95,8 @@ public:
     }
 };
 
+
+using reg_t = std::string;
 
 namespace assemblyUtils {
     const int ARM_INSTRUCTION_SIZE_BYTES = 32;
@@ -150,27 +149,17 @@ namespace assemblyUtils {
 //        return operand.find("[")  != std::string::npos;
 //    }
 
-    enum AddressMode {
-        RegisterMode,
-        ImmediateMode,
-        MemoryMode
-    };
-
     enum MemSize {
         MEM32,
         MEM64
     };
 
-    std::string getTmpKindFromFullTmp(const std::string &t) {
-        return t.substr(t.size() - 2, 2);
-    }
-
-    bool tmpGetKind(const std::string &t) {
+    bool tmpGetKind(const std::string &kind) {
         // God forgive me for this code.
-        if (t == tmp[0]) {
-            return 0;
-        } else if (t == tmp[1]) {
-            return 1;
+        if (kind == tmp[0]) {
+            return false;
+        } else if (kind == tmp[1]) {
+            return true;
         }
         zerror("Wrong tmp");
     }
@@ -180,7 +169,7 @@ namespace assemblyUtils {
         return MemSize::MEM64;
     }
 
-    std::string getTmpRegByMemOpSize(MemSize s, bool tmpNumper) {
+    reg_t getTmpRegByMemOpSize(MemSize s, bool tmpkind) {
         std::string pref;
         switch (s) {
             case MEM32:
@@ -188,31 +177,9 @@ namespace assemblyUtils {
             case MEM64:
                 pref = prefix64;
         }
-        return pref + tmp[tmpNumper];
+        return pref + tmp[tmpkind];
     }
 }
-
-//class AddressesCollector {
-//    cs_insn *instructionIterator;
-//public:
-//    AddressesCollector(cs_insn *it)
-//            : instructionIterator(it) {}
-//
-////    void convertInstruction() {
-////        if (currentInstruction >= numberOfInstructions) {
-////            zerror("All instruciton have been conerted");
-////        }
-////    }
-//
-//    size_t instructionSzie(size_t index) {
-//        return instructionIterator[index].size;
-//    }
-//
-//    address_t instructionAddress() {
-//        return currentArmInstructionAddress;
-//    }
-//
-//};
 
 // 1. mam skok do adresu x/
 // 2. zostaw informację - w instrukcji skoku x daj adres instrukcji z-tej
@@ -238,22 +205,40 @@ namespace assemblyUtils {
 //      1.2 jeżeli mem dotyczy
 // 2. na jaki bajt przekoczy relokacja
 // mov [rel],
+
 struct ArmInstructionStub {
     std::string content;
     size_t size;
-    // !IMPORTANT Will have offsets relative to instruction address, not function address!
+    // !IMPORTANT Will have offsets relative to instruction (STUB!) address, not function address!
     std::vector<Relocation> changedRelocations;
 };
 
 class InstructionBuilder {
-    // God forvie me for O(n^2) complexity of this code
+    // Lord forvie me for O(n^2) complexity of this code
     std::string ret;
 
-public:
-    InstructionBuilder(const std::string &s) : ret(s) {}
+    static std::string makeInstr(const std::string &instruction, const std::string &arg1, const std::string &arg2) {
+        return instruction + " " + arg1 + ", " + arg2;
+    }
 
-    InstructionBuilder append(const std::string &s) {
-        InstructionBuilder(ret + "\n" + s);
+    static std::string makeInstr(const std::string &instruction, const std::string &arg1) {
+        return instruction + " " + arg1;
+    }
+
+public:
+    explicit InstructionBuilder(const std::string &s) : ret(s) {}
+
+    InstructionBuilder(const std::string &instruction, const std::string &arg1) : ret(makeInstr(instruction, arg1)) {}
+
+    InstructionBuilder(const std::string &instruction, const std::string &arg1, const std::string &arg2) : ret(
+            makeInstr(instruction, arg1, arg2)) {}
+
+    InstructionBuilder append(const std::string &instruction, const std::string &arg1) {
+        InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1));
+    }
+
+    InstructionBuilder append(const std::string &instruction, const std::string &arg1, const std::string &arg2) {
+        InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2));
     }
 
     std::string build() {
@@ -265,7 +250,6 @@ namespace InstructionConverter {
     void commonMemAsserts(x86_op_mem mem) {
         assert(mem.index == 0);
     }
-
 
     std::string mapRegister(x86_reg reg) {
         todo("Implement");
@@ -286,57 +270,130 @@ namespace InstructionConverter {
         }
     }
 
-    ArmInstructionStub convertNonRelocableMemOperand(bool tmp1Kind, x86_op_mem op, std::string reg) {
+    ArmInstructionStub convertNonRelocableMemOperand(bool tmp1Kind, x86_op_mem op, const reg_t &reg) {
         std::string tmp164 = assemblyUtils::prefix64 + assemblyUtils::tmp[tmp1Kind];
         return ArmInstructionStub{
-                .content = InstructionBuilder("mov " + tmp164 + ", " + convertImmidiate(op.disp))
-                        .append("ldr " + reg + ", " + "[" + mapRegister(op.base) + ", " + tmp164 + "]")
+                .content = InstructionBuilder("mov", tmp164, convertImmidiate(op.disp))
+                        .append("ldr", reg, "[" + mapRegister(op.base) + ", " + tmp164 + "]")
                         .build(),
                 .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2,
         };
     }
 
+    // Przyklad
+    // cmp [rip + _], 2137
+    // ^ chcemy zamienić cmp [rip + _] na
+    // ldr tmp1, #0
+    // gdzie na #0 jest relatywna relokacja.
+    // w takim wypadku
+    // operandPositionInInstruction = 3, bo na 3ci bajt (licząc od zera) od adresu instrukcji cmp będzie ustawiony adres relokacji
+    // pierwszy operand cmp odnosi się do adresu rip + (adresSymbolu - (rip + 3) + addend) = adresSymbolu - 3 + addend
+    // i do tego samego adresu sami musimy się odnieść
+    // w takim wypadku relokacja w armie (która ma adres równy adresowi instrukcji) powinna mieć taki addend, że
+    // (adresSymbolu + addend2 - rip) + rip (dodaje rip bo taka jest semantyka ldr)
+    // będzie równy adresSymbolu - 3 + addend = adresSymbolu  + addend2
+    // addend2 = addend - 3
+    // https://reverseengineering.stackexchange.com/questions/17666/how-does-the-ldr-instruction-work-on-arm
+    ArmInstructionStub
+    convertRelocableMemOperand(const reg_t &reg, const Relocation &r, size_t operandPositionInInstruction) {
+        Relocation retRel = r;
+        retRel.type = R_AARCH64_LD_PREL_LO19;
+        // Offset in instruction stub is 0
+        retRel.offset = 0;
+        retRel.addend = r.addend - (Elf_Sword) operandPositionInInstruction;
+        return ArmInstructionStub{
+                .content = InstructionBuilder("ldr", reg, convertImmidiate(0)).build(),
+                .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES,
+                .changedRelocations = {r}
+        };
+    }
+
+    // relocationPositionInInstruction
+    // if operand is [rip + x], what byte is x in in the instruction
+    // example: cmp qword ptr [rip + _], 2137 would have relocation for the byte 3
+    // cmp qword ptr [rip + _], 2137 would be having relocation for byte 2
+    ArmInstructionStub readMemOpToTmp(const std::vector<Relocation> &relocations,
+                                      const reg_t &tmp,
+                                      x86_op_mem op,
+                                      cs_insn *ins,
+                                      size_t relocationPositionInInstruction) {
+        commonMemAsserts(op);
+        ArmInstructionStub ret;
+        switch (op.base) {
+            case X86_REG_RIP:
+                assert(relocations[0].offset - ins->address == relocationPositionInInstruction);
+                assert(relocations[0].type == R_X86_64_PC32 || relocations[0].type == R_X86_64_PLT32);
+                ret = convertRelocableMemOperand(tmp, relocations[0], 3);
+                break;
+            default:
+                ret = convertNonRelocableMemOperand(!assemblyUtils::tmpGetKind(tmp), op, tmp);
+        }
+        return ret;
+    }
+
     namespace cmpHandler {
-
-        ArmInstructionStub readOp1ToTmp1(std::vector<Relocation> &relocations, std::string tmp1, cs_insn *ins) {
-            // cmp op1
-            x86_op_mem op1 = ins->detail->x86.operands[0].mem;
-            commonMemAsserts(op1);
-            ArmInstructionStub ret;
-            switch (op1.base) {
-                case X86_REG_RIP:
-                    // 4, 5, 6, 7 bajt to będzie ta relokacja
-                    assert(relocations[0].offset - ins->size == 3);
-                    assert(relocations[0].type == R_X86_64_PC32 || relocations[1].type == R_X86_64_PLT32);
-                    todo("Przekonwertowaźć tę relokację na R_AARCH64_LD_PREL_LO19");
-
-                    // Jeśli baza to rip, należy założyć, że przesunięcie ma relokację typu R_X86_64_PC32 lub R_X86_64_PLT32.
-                    // Należy przekonwertować ją na relokację typu R_AARCH64_LD_PREL_LO19 i wygenerować następujący kod (znak @ oznacza komentarz):
-
-                    break;
-                default:
-                    ret = convertNonRelocableMemOperand(1, op1, tmp1);
+        size_t getPossibleRelocationForCmpOp1(assemblyUtils::MemSize memOpSize) {
+            switch (memOpSize) {
+                case assemblyUtils::MEM32:
+                    return 2;
+                case assemblyUtils::MEM64:
+                    return 3;
             }
-            return ret;
         }
 
-        ArmInstructionStub handleCmpMem(cs_insn *ins, std::vector<Relocation> &relatedRelocations) {
+        size_t getPossibleRelocationForCmpOp2(assemblyUtils::MemSize memOpSize) {
+            switch (memOpSize) {
+                case assemblyUtils::MEM32:
+                    return 2;
+                case assemblyUtils::MEM64:
+                    return 3;
+            }
+        }
+
+        ArmInstructionStub handleCmpMem(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
             x86_op_mem m = ins->detail->x86.operands[0].mem;
-            std::string tmp = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::getMemOpSize(m), 0);
-            auto c = readOp1ToTmp1(relatedRelocations, tmp, ins);
+            auto memOpSize = assemblyUtils::getMemOpSize(m);
+            reg_t tmp = assemblyUtils::getTmpRegByMemOpSize(memOpSize, 0);
+            auto c = readMemOpToTmp(relatedRelocations, tmp, m, ins, getPossibleRelocationForCmpOp1(memOpSize));
+            c.size += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+            c.content = InstructionBuilder(c.content)
+                    .append("cmp", tmp, convert(ins->detail->x86.operands[1]))
+                    .build();
+            return c;
         }
 
-        // !IMPORTANT !PAMIĘTAĆ O PRZEKAZYWANIU PRZEZ REFERENCJĘ
-        // TODO usuwanioe i przekazywanie relokacji przez referencję chyba nawet nie jest konieczne.
-        ArmInstructionStub handleCmp(cs_insn *ins, std::vector<Relocation> &relatedRelocations) {
+        ArmInstructionStub handleCmpReg(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            switch (ins->detail->x86.operands[1].type) {
+                case X86_OP_REG:
+                case X86_OP_IMM:
+                    return ArmInstructionStub{
+                            .content = InstructionBuilder("cmp", convert(ins->detail->x86.operands[0]),
+                                                          convert(ins->detail->x86.operands[1])).build(),
+                            .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES,
+                    };
+                case X86_OP_MEM: {
+                    auto m = ins->detail->x86.operands[1].mem;
+                    auto memOpSize = assemblyUtils::getMemOpSize(m);
+                    reg_t tmp = assemblyUtils::getTmpRegByMemOpSize(memOpSize, 0);
+                    auto c = readMemOpToTmp(relatedRelocations, tmp, m, ins, getPossibleRelocationForCmpOp2(memOpSize));
+                    c.size += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+                    c.content = InstructionBuilder(c.content)
+                            .append("cmp", convert(ins->detail->x86.operands[0]), tmp)
+                            .build();
+                    return c;
+                }
+                default:
+                    zerror("handleCmpReg: Invalid second operand");
+            }
+        }
+
+        ArmInstructionStub handleCmp(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
             auto detail = ins->detail;
             assert(detail->x86.op_count == 2);
-            assert(relatedRelocations.size() == 0);
-
-            ArmInstructionStub ret;
+            assert(relatedRelocations.empty());
             switch (detail->x86.operands[0].type) {
                 case X86_OP_REG:
-                    break;
+                    return handleCmpReg(ins, relatedRelocations);
                 case X86_OP_MEM:
                     // Popatrz, do jakiej wielkości mem
                     // wczytaj op
@@ -349,12 +406,10 @@ namespace InstructionConverter {
                     // cmp tmp1.32, imm32;
                     // cmp
 
-                    ret = handleCmpMem(ins, relatedRelocations);
-                    break;
+                    return handleCmpMem(ins, relatedRelocations);
                 default:
                     zerror("cmp: Invalid operand type");
             }
-            return ret;
         }
     }
 
@@ -364,7 +419,7 @@ namespace InstructionConverter {
             auto detail = ins->detail;
             assert(detail->x86.op_count == 2);
             assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
-            assert(relatedRelocations.size() == 0);
+            assert(relatedRelocations.empty());
 
             auto c = ArmInstructionStub{
                     .content = "add " + InstructionConverter::convert(detail->x86.operands[0]) + ", " +
@@ -378,7 +433,7 @@ namespace InstructionConverter {
             auto detail = ins->detail;
             assert(detail->x86.op_count == 2);
             assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
-            assert(relatedRelocations.size() == 0);
+            assert(relatedRelocations.empty());
 
             auto c = ArmInstructionStub{
                     .content = "sub " + InstructionConverter::convert(detail->x86.operands[0]) + ", " +
@@ -435,12 +490,13 @@ class FunctionData {
         assert(strEqual(insn[1].mnemonic, "push") && strEqual(insn[1].op_str, "rbp"));
         assert(strEqual(insn[2].mnemonic, "mov") && strEqual(insn[2].op_str, "rbp, rsp"));
 
-        armInstructions.push_back("stp x29, x30, [sp, #-16]!\n"
-                                  "mov x29, sp");
+        armInstructions.push_back(
+                InstructionBuilder("stp x29, x30, [sp, #-16]!")
+                        .append("mov", "x29", "sp")
+                        .build());
 
-        // This is only for indexes
-        armInstructions.push_back("");
-        armInstructions.push_back("");
+        armInstructions.emplace_back("");
+        armInstructions.emplace_back("");
 
         armInstructionAddresses.push_back(0);
         armInstructionAddresses.push_back(ARM_PROLOG_SIZE_BYTES);
@@ -452,11 +508,11 @@ class FunctionData {
         assert(strEqual(insn[numberOfInstructions - 2].mnemonic, "leave"));
         assert(strEqual(insn[numberOfInstructions - 1].mnemonic, "ret"));
 
-        armInstructions.push_back("mov x0, x9\n"
-                                  "add sp, x29, #16\n"
-                                  "ldp x29, x30, [sp, #-16]\n"
-                                  "ret");
-        armInstructions.push_back("");
+        armInstructions.emplace_back("mov x0, x9\n"
+                                     "add sp, x29, #16\n"
+                                     "ldp x29, x30, [sp, #-16]\n"
+                                     "ret");
+        armInstructions.emplace_back("");
     }
 
     static bool checkIfAddressBetweenInstruction(address_t offsetFromBase,
@@ -556,7 +612,7 @@ public:
 
     void convertFunctions() {
         std::sort(originalSectionData.symbols.begin(), originalSectionData.symbols.end(),
-                  [](Symbol s1, Symbol s2) -> bool {
+                  [](const Symbol &s1, const Symbol &s2) -> bool {
                       return s1.value < s2.value;
                   });
         std::sort(originalSectionData.relocations.begin(), originalSectionData.relocations.end(),
