@@ -400,47 +400,47 @@ handleCmp(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
 }
 } // namespace cmpHandler
 
-namespace callHandler() {
-  ArmInstructionStub handleCall(
-      cs_insn * ins, const std::vector<Relocation> &relatedRelocations) {
-    auto detail = handle;
-    assert(detail->x86.op_count == 1);
-    assert(detail->x86.operands[0].type == x86_op_type::X86_OP_CALL);
-    assert(relatedRelocations.size() == 1);
+namespace callHandler {
+ArmInstructionStub
+handleCall(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+  auto detail = handle;
+  assert(detail->x86.op_count == 1);
+  assert(detail->x86.operands[0].type == x86_op_type::X86_OP_CALL);
+  assert(relatedRelocations.size() == 1);
 
-    // fAddr: f
-    // rel f
-    // addr: call _
-    // call f
-    // rip: e8 XX XX XX XX
-    // gdzie XX..XX musi mieć wartość równą (adres f - adres końca instrukcji) =
-    // fAddr - (adresInstrukcji + 5) // Z tego wynika, że wartość relokowalna
-    // musi być taka, że fAddr - (adresInstrukcji + 1) + addend = fAddr -
-    // adresInstrukcji - 5 => addend = -4 semantyka bl bl x idzie do PC + x
-    // czyli muszę dodać taką relokację, że
-    // 1. do jakiego adresu idzie call f
-    // (symaddr - (adresInstrukcji + 1) + addend) = newAddr - (adresInstrukcji +
-    // 5) newAddr = symAddr + a + 4
-    // 2. do jakiego adresu idzie bl _
-    // https://stackoverflow.com/questions/15671717/relocation-in-assembly
-    // symAddr - PC + a2 = newAddr - PC
-    // newAddr = symAddr + a2
-    // symAddr + a + 4 = symAdr + a2
-    // a2 = a + 4
-    Relocation r = relatedRelocations[0];
-    r.type = R_AARCH64_CALL26;
-    r.addend = relatedRelocations[0] + 4;
-    r.offset = 0;
-    return ArmInstructionStub {
-      .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2,
-      .content = InstructionBuilder("bl", convertImmidiate(0))
-                     .append("mov", "x9", "x0"),
-      .changedRelocations = std::vector<Relocation> {
-        r
-      }
+  // fAddr: f
+  // rel f
+  // addr: call _
+  // call f
+  // rip: e8 XX XX XX XX
+  // gdzie XX..XX musi mieć wartość równą (adres f - adres końca instrukcji) =
+  // fAddr - (adresInstrukcji + 5) // Z tego wynika, że wartość relokowalna
+  // musi być taka, że fAddr - (adresInstrukcji + 1) + addend = fAddr -
+  // adresInstrukcji - 5 => addend = -4 semantyka bl bl x idzie do PC + x
+  // czyli muszę dodać taką relokację, że
+  // 1. do jakiego adresu idzie call f
+  // (symaddr - (adresInstrukcji + 1) + addend) = newAddr - (adresInstrukcji +
+  // 5) newAddr = symAddr + a + 4
+  // 2. do jakiego adresu idzie bl _
+  // https://stackoverflow.com/questions/15671717/relocation-in-assembly
+  // symAddr - PC + a2 = newAddr - PC
+  // newAddr = symAddr + a2
+  // symAddr + a + 4 = symAdr + a2
+  // a2 = a + 4
+  Relocation r = relatedRelocations[0];
+  r.type = R_AARCH64_CALL26;
+  r.addend = relatedRelocations[0] + 4;
+  r.offset = 0;
+  return ArmInstructionStub {
+    .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2,
+    .content =
+        InstructionBuilder("bl", convertImmidiate(0)).append("mov", "x9", "x0"),
+    .changedRelocations = std::vector<Relocation> {
+      r
     }
   }
-} // namespace )
+}
+} // namespace callHandler
 
 namespace arithmeticInstructionHandler {
 ArmInstructionStub
