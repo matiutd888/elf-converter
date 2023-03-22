@@ -1,3 +1,9 @@
+RIP - adres końca instrukcji
+PC - adres obecnej instrukcji
+
+PC relative addressing - skacze do obecnej + offset
+
+
 PLAN TESTOWANIA
 1. przetestować czy działa mi iterowanie po funkcjach i łączenie symboli oraz relokacji z odpowiednimi funkcjami
 2. zunit testować działanie convertera

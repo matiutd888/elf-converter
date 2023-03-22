@@ -287,20 +287,20 @@ namespace InstructionConverter {
     // gdzie na #0 jest relatywna relokacja.
     // w takim wypadku
     // operandPositionInInstruction = 3, bo na 3ci bajt (licząc od zera) od adresu instrukcji cmp będzie ustawiony adres relokacji
-    // pierwszy operand cmp odnosi się do adresu rip + (adresSymbolu - (rip + 3) + addend) = adresSymbolu - 3 + addend
+    // pierwszy operand cmp odnosi się do rip + (adresSymbolu - (adresInstrukcji + 3) + addend) = adresSymbolu - 3 + addend + (rip - adresInstrukcji) = adresSymbolu - 3 + addend + ROZMIAR_INSTRUKCJI_x86
     // i do tego samego adresu sami musimy się odnieść
     // w takim wypadku relokacja w armie (która ma adres równy adresowi instrukcji) powinna mieć taki addend, że
-    // (adresSymbolu + addend2 - rip) + rip (dodaje rip bo taka jest semantyka ldr)
-    // będzie równy adresSymbolu - 3 + addend = adresSymbolu  + addend2
-    // addend2 = addend - 3
+    // (adresSymbolu + addend2 - PC) + PC (dodaje rip bo taka jest semantyka ldr)
+    // będzie równy adresSymbolu - 3 + addend + ROZMIAR_INSTRUKCJI_x86 = adresSymbolu  + addend2
+    // addend2 = addend - 3 - ROZMIAR_INSTRUKCJI_x86
     // https://reverseengineering.stackexchange.com/questions/17666/how-does-the-ldr-instruction-work-on-arm
-    ArmInstructionStub
-    convertRelocableMemOperand(const reg_t &reg, const Relocation &r, size_t operandPositionInInstruction) {
+    ArmInstructionStub convertRelocableMemOperand(const reg_t &reg, const Relocation &r, size_t operandPositionInInstruction, size_t x86InsSize) {
         Relocation retRel = r;
         retRel.type = R_AARCH64_LD_PREL_LO19;
         // Offset in instruction stub is 0
         retRel.offset = 0;
-        retRel.addend = r.addend - (Elf_Sword) operandPositionInInstruction;
+        // TODO zastanowić się nad tym, czy na pewno powinienem to robić
+        retRel.addend = r.addend - (Elf_Sword) operandPositionInInstruction - (Elf_Sword) x86InsSize;
         return ArmInstructionStub{
                 .content = InstructionBuilder("ldr", reg, convertImmidiate(0)).build(),
                 .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES,
@@ -323,7 +323,7 @@ namespace InstructionConverter {
             case X86_REG_RIP:
                 assert(relocations[0].offset - ins->address == relocationPositionInInstruction);
                 assert(relocations[0].type == R_X86_64_PC32 || relocations[0].type == R_X86_64_PLT32);
-                ret = convertRelocableMemOperand(tmp, relocations[0], 3);
+                ret = convertRelocableMemOperand(tmp, relocations[0], relocationPositionInInstruction, ins->size);
                 break;
             default:
                 ret = convertNonRelocableMemOperand(!assemblyUtils::tmpGetKind(tmp), op, tmp);
@@ -405,10 +405,47 @@ namespace InstructionConverter {
                     // trzeba to przetłumaczyć na
                     // cmp tmp1.32, imm32;
                     // cmp
-
                     return handleCmpMem(ins, relatedRelocations);
                 default:
                     zerror("cmp: Invalid operand type");
+            }
+        }
+    }
+
+    namespace callHandler() {
+        ArmInstructionStub handleCall(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            auto detail = handle;
+            assert(detail->x86.op_count == 1);
+            assert(detail->x86.operands[0].type == x86_op_type::X86_OP_CALL);
+            assert(relatedRelocations.size() == 1);
+            
+            // fAddr: f
+            // rel f  
+            // addr: call _
+            // call f
+            // rip: e8 XX XX XX XX
+            // gdzie XX..XX musi mieć wartość równą (adres f - adres końca instrukcji) = fAddr - (adresInstrukcji + 5) // 
+            // Z tego wynika, że wartość relokowalna musi być taka, że fAddr - (adresInstrukcji + 1) + addend = fAddr - adresInstrukcji - 5 => addend = -4
+            // semantyka bl
+            // bl x idzie do PC + x
+            // czyli muszę dodać taką relokację, że
+            // 1. do jakiego adresu idzie call f
+            // (symaddr - (rip + 1) + addend) = newAddr - (rip + 5)
+            // newAddr = symAddr + a + 4
+            // 2. do jakiego adresu idzie bl _
+            // https://stackoverflow.com/questions/15671717/relocation-in-assembly
+            // symAddr - PC + a2 = newAddr - PC
+            // newAddr = symAddr + a2
+            // symAddr + a + 4 = symAdr + a2
+            // a2 = a + 4
+            Relocation r = relatedRelocations[0];
+            r.type = R_AARCH64_CALL26;
+            r.addend = relatedRelocations[0] + 4;
+            r.offset = 0;
+            return ArmInstructionStub {
+                .size = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2,
+                .content = InstructionBuilder("bl", convertImmidiate(0)).append("mov", "x9", "x0"),
+                .changedRelocations = std::vector<Relocation>{r}
             }
         }
     }
