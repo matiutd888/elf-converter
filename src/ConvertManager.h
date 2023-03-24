@@ -92,48 +92,53 @@ public:
 using reg_t = std::string;
 
 namespace assemblyUtils {
+    
+    
     const int ARM_INSTRUCTION_SIZE_BYTES = 32;
-    std::string prefix64 = "x";
-    std::string prefix32 = "w";
-    std::string tmp[2] = {"12", "13"};
+    
+    
+    namespace {
+        std::string prefix64 = "x";
+        std::string prefix32 = "w";
+        std::string tmp[2] = {"12", "13"};
 
-    const std::map<std::string, std::string> registerMaps64 = {
-            {"rdi", "x0"},
-            {"rsi", "x1"},
-            {"rdx", "x2"},
-            {"rcx", "x3"},
-            {"r8",  "x4"},
-            {"r9",  "x5"},
-            {"rax", "x9"},
-            {"r10", "x10"},
-            {"r11", "x11"},
-            {"rbp", "x29"},
-            {"rbx", "x19"},
-            {"r12", "x20"},
-            {"r13", "x21"},
-            {"r14", "x22"},
-            {"r15", "x23"},
-            {"rsp", "sp"},
-    };
-    const std::map<std::string, std::string> registerMaps32 = {
-            {"edi", "w0"},
-            {"esi", "w1"},
-            {"edx", "w2"},
-            {"ecx", "w3"},
-            {"e8",  "w4"},
-            {"e9",  "w5"},
-            {"eax", "w9"},
-            {"e10", "w10"},
-            {"e11", "w11"},
-            {"ebp", "w29"},
-            {"ebx", "w19"},
-            {"e12", "w20"},
-            {"e13", "w21"},
-            {"e14", "w22"},
-            {"e15", "w23"},
-            {"esp", "sp"},
-    };
-
+        const std::map<std::string, std::string> registerMaps64 = {
+                {"rdi", "x0"},
+                {"rsi", "x1"},
+                {"rdx", "x2"},
+                {"rcx", "x3"},
+                {"r8",  "x4"},
+                {"r9",  "x5"},
+                {"rax", "x9"},
+                {"r10", "x10"},
+                {"r11", "x11"},
+                {"rbp", "x29"},
+                {"rbx", "x19"},
+                {"r12", "x20"},
+                {"r13", "x21"},
+                {"r14", "x22"},
+                {"r15", "x23"},
+                {"rsp", "sp"},
+        };
+        const std::map<std::string, std::string> registerMaps32 = {
+                {"edi", "w0"},
+                {"esi", "w1"},
+                {"edx", "w2"},
+                {"ecx", "w3"},
+                {"e8",  "w4"},
+                {"e9",  "w5"},
+                {"eax", "w9"},
+                {"e10", "w10"},
+                {"e11", "w11"},
+                {"ebp", "w29"},
+                {"ebx", "w19"},
+                {"e12", "w20"},
+                {"e13", "w21"},
+                {"e14", "w22"},
+                {"e15", "w23"},
+                {"esp", "sp"},
+        };
+    }
 //    bool isRegister(std::string s) {
 //        return registerMaps32.find(s) != registerMaps32.end() ||
 //        registerMaps64.find(s) != registerMaps64.end();
@@ -151,17 +156,6 @@ namespace assemblyUtils {
         TMP1 = 0,
         TMP2 = 1,
     };
-
-
-    bool tmpGetKind(const std::string &kind) {
-        // God forgive me for this code.
-        if (kind == tmp[0]) {
-            return false;
-        } else if (kind == tmp[1]) {
-            return true;
-        }
-        zerror("Wrong tmp");
-    }
 
     MemSize getMemOpSize(x86_op_mem m) {
         todo("Learn how to deduce mem op size");
@@ -273,9 +267,9 @@ namespace InstructionConverter {
         }
     }
 
-    ArmInstructionStub convertNonRelocableMemOperand(bool tmp1Kind, x86_op_mem op,
+    ArmInstructionStub convertNonRelocableMemOperand(TmpKind tmp1Kind, x86_op_mem op,
                                                      const reg_t &reg) {
-        std::string tmp164 = assemblyUtils::prefix64 + assemblyUtils::tmp[tmp1Kind];
+        reg_t tmp164 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::MEM64, tmp1Kind);
         return ArmInstructionStub{
                 .content = InstructionBuilder("mov", tmp164, convertImmidiate(op.disp))
                         .append("ldr", reg,
@@ -351,7 +345,8 @@ namespace InstructionConverter {
     }
 
     namespace cmpHandler {
-        size_t getPossibleRelocationForCmpOp1(assemblyUtils::MemSize memOpSize) {
+        namespace {
+               size_t getPossibleRelocationForCmpOp1(assemblyUtils::MemSize memOpSize) {
             switch (memOpSize) {
                 case assemblyUtils::MEM32:
                     return 2;
@@ -385,6 +380,7 @@ namespace InstructionConverter {
                     .append("cmp", tmp, convert(ins->detail->x86.operands[1]))
                     .build();
             return c;
+        }
         }
 
         ArmInstructionStub
@@ -447,6 +443,36 @@ namespace InstructionConverter {
     } // namespace cmpHandler
 
     namespace movHandler {
+        ArmInstructionStub handleMovMem(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            switch (ins->detail->x86.operands[1].type) {
+                        case x86_op_type::X86_OP_MEM:
+                            return readMemOpToReg(relatedRelocations,
+                                                  convertReg(ins->detail->x86.operands[0].reg),
+                                                  ins->detail->x86.operands[1].mem,
+                                                  ins,
+                                                  assemblyUtils::TMP1,
+                                                  2
+                            );
+                        case x86_op_type::X86_OP_IMM:
+                            if (relatedRelocations.size() > 0 && 
+                                (relatedRelocations[0].type == R_X86_64_32 || relatedRelocations[1].type == R_X86_64_32S))
+                    
+                            {
+                                Relocation r = {
+                                    .offset = 0,
+                                    .type = R_AARCH64_ADR_PREL_LO21,
+                                    .symbol = relatedRelocations[0].symbol
+                                    .addend = relatedRelocations[0].addend
+                                };
+                                InstructionBuilder("adr");
+                                todo("finish this shit!");
+                            }
+                        
+                        case x86_op_type::X86_OP_REG:
+                            return InstructionBuilder("mov", convert(ins->detail->x86.operands[0]), convert(ins->detail->x86.operands[1])).build();
+                            
+                    }
+        }
 
         ArmInstructionStub handleMov(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
             assert(ins->detail->x86.op_count = 2);
@@ -461,9 +487,11 @@ namespace InstructionConverter {
                                                   assemblyUtils::TMP1,
                                                   2
                             );
-                        case x86_op_type::X86_OP_IMM, x86_op_type::X86_OP_REG:
-                            todo("implement this shit");
+                        case x86_op_type::X86_OP_IMM:
 
+                        
+                        case x86_op_type::X86_OP_REG:
+                            
                     }
                 }
 
