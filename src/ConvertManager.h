@@ -11,6 +11,8 @@
 #include <map>
 #include <optional>
 #include <ostream>
+#include <algorithm>
+
 
 using namespace ELFIO;
 
@@ -249,6 +251,13 @@ namespace assemblyUtils {
 // mov [rel],
 
 struct ArmInstructionStub {
+    static void sizeAssert(const std::string &content, size_t size) {
+        assert(size % assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES == 0);
+        assert(std::count(content.begin(), content.end(), '\n') + 1 ==
+               size / assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES);
+    }
+
+public:
     std::string content;
     size_t size;
     // !IMPORTANT Will have offsets relative to instruction (STUB!) address, not
@@ -257,15 +266,22 @@ struct ArmInstructionStub {
     // But this is just an idea.
     std::vector<Relocation> changedRelocations;
 
+
     ArmInstructionStub(const std::string &content, size_t size,
                        const std::vector<Relocation> &changedRelocations) : content(content),
                                                                             size(size),
                                                                             changedRelocations(
-                                                                                    changedRelocations) {}
+                                                                                    changedRelocations) {
+
+        sizeAssert(content, size);
+    }
 
     ArmInstructionStub(const std::string &content, size_t size) : content(content),
                                                                   size(size),
-                                                                  changedRelocations() {}
+                                                                  changedRelocations() {
+
+        sizeAssert(content, size);
+    }
 
 };
 
