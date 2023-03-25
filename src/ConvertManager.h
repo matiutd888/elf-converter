@@ -19,12 +19,12 @@ using namespace ELFIO;
 
 #define mDebug (std::cout << "DEBUG: ")
 #define mWarn (std::cout << "WARN: ")
-#define todo(S) (zerror("TODO" S))
+#define todo(S) (zerror("TODO: " S))
 #define strEqual(I, J) (strcmp((I), (J)) == 0)
 
 using address_t = Elf64_Addr;
 
-// TODO więcej adresów do relokacji / braku relokajci?
+// TODO więcej assertów do relokacji / braku relokajci?
 
 class FileChecker {
 public:
@@ -104,16 +104,16 @@ class MAddress {
     std::optional<address_t> relativeToFunction;
 
 public:
-    void setRelativeToFunction(address_t relativeToFunction) {
-        this->relativeToFunction = relativeToFunction;
+    void setRelativeToFunction(address_t rFunction) {
+        this->relativeToFunction = rFunction;
     }
 
-    void setRelativeToSection(address_t relativeToSection) {
-        this->relativeToSection = relativeToSection;
+    void setRelativeToSection(address_t rSection) {
+        this->relativeToSection = rSection;
     }
 
-    void setRelativeToInstruction(address_t relativeToInstruction) {
-        this->relativeToInstruction = relativeToInstruction;
+    void setRelativeToInstruction(address_t rInstruction) {
+        this->relativeToInstruction = rInstruction;
     }
 
     address_t getRelativeToFunction() const { return relativeToFunction.value(); }
@@ -224,9 +224,12 @@ namespace assemblyUtils {
         zerror("Couldnt convert x86 register to aarch64!");
     }
 
-    MemSize getMemOpSize(x86_op_mem m) {
-        todo("Learn how to deduce mem op size");
-        return MemSize::MEM64;
+    MemSize getMemOpSize(cs_x86_op m) {
+        if (m.size == 4) {
+            return MEM32;
+        } else {
+            return MEM64;
+        }
     }
 
     reg_t getTmpRegByMemOpSize(TmpKind tmpkind, MemSize s) {
@@ -540,8 +543,8 @@ namespace InstructionConverter {
                                         .build(),
                                 assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES));
                     case X86_OP_MEM: {
-                        auto m = ins->detail->x86.operands[1].mem;
-                        auto memOpSize = assemblyUtils::getMemOpSize(m);
+                        x86_op_mem m = ins->detail->x86.operands[1].mem;
+                        auto memOpSize = assemblyUtils::getMemOpSize(ins->detail->x86.operands[1]);
                         reg_t tmp =
                                 assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1, memOpSize);
                         auto c =
@@ -564,7 +567,7 @@ namespace InstructionConverter {
             handleCmpMem(cs_insn *ins,
                          const std::vector<RelocationWithMAddress> &relatedRelocations) {
                 x86_op_mem m = ins->detail->x86.operands[0].mem;
-                auto memOpSize = assemblyUtils::getMemOpSize(m);
+                auto memOpSize = assemblyUtils::getMemOpSize(ins->detail->x86.operands[0]);
                 reg_t tmp =
                         assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1, memOpSize);
                 auto c = readMemOpToReg(relatedRelocations, tmp, m, ins, assemblyUtils::TMP2);
@@ -679,7 +682,7 @@ namespace InstructionConverter {
                                             .append(
                                                     "str",
                                                     assemblyUtils::getTmpRegByMemOpSize(
-                                                            assemblyUtils::TMP1, assemblyUtils::getMemOpSize(mem)),
+                                                            assemblyUtils::TMP1, assemblyUtils::getMemOpSize(ins->detail->x86.operands[0])),
                                                     assemblyUtils::armMemOp(assemblyUtils::armReg(mem.base),
                                                                             tmp264))
                                             .build();
@@ -695,7 +698,7 @@ namespace InstructionConverter {
                         zerror("handleMovMemNonRipBase: Invalid operand type");
                 }
                 auto tmp1 = assemblyUtils::getTmpRegByMemOpSize(
-                        assemblyUtils::TMP1, assemblyUtils::getMemOpSize(mem));
+                        assemblyUtils::TMP1, assemblyUtils::getMemOpSize(ins->detail->x86.operands[0]));
                 auto tmp264 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP2,
                                                                   assemblyUtils::MEM64);
                 auto instr = InstructionBuilder(
@@ -713,7 +716,6 @@ namespace InstructionConverter {
             ArmStubWithRels_t handleMovMemRipBase(
                     cs_insn *ins,
                     const std::vector<RelocationWithMAddress> &relatedRelocations) {
-                auto m = ins->detail->x86.operands[0].mem;
                 assert(relatedRelocations.size() == 1);
                 assert(relatedRelocations[0].type() == R_X86_64_PC32 ||
                        relatedRelocations[0].type() == R_X86_64_PLT32);
@@ -725,7 +727,7 @@ namespace InstructionConverter {
                 Relocation r = Relocation(0, relatedRelocations[0].symbol(),
                                           R_AARCH64_ADR_PREL_LO21, newAddend);
                 reg_t tmp2 = assemblyUtils::getTmpRegByMemOpSize(
-                        assemblyUtils::TMP2, assemblyUtils::getMemOpSize(m));
+                        assemblyUtils::TMP2, assemblyUtils::getMemOpSize(ins->detail->x86.operands[0]));
                 reg_t tmp164 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1,
                                                                    assemblyUtils::MEM64);
                 auto instr =
@@ -1133,6 +1135,7 @@ public:
         return data;
     }
 };
+
 struct SectionData {
     section *s;
     std::vector<Symbol> symbols;
@@ -1201,15 +1204,8 @@ public:
                 std::vector<Relocation> relatedRelocations;
                 todo("Get related relocastions");
                 convertFunction(symbol, relatedRelocations);
-            } else {
-                // TODO czy adresy symboli innych niż funkcje to może być
-                // Rozumiem że adres funkcji może się zmienić
-                // Ale czy może zmienić się adres czegoś innego niż funckja
-                // Odpowiedź: tak, ale nie ma symboli w funkcji. pozostałe symbole
-                // przesuwamy więc po prostu pod funkcjami
             }
         }
-
         todo("Construct section content from converted functions");
     }
 };
