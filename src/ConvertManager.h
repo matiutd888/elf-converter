@@ -117,6 +117,10 @@ public:
   }
 
   address_t getRelativeToFunction() const { return relativeToFunction.value(); }
+
+  address_t getRelativeToInstruction() const {
+    return relativeToInstruction.value();
+  }
 };
 
 class RelocationWithMAddress {
@@ -269,7 +273,7 @@ struct ArmInstructionStub {
 
 public:
   std::string content;
-  size_t size;
+  size_t sizeBytes;
   // !IMPORTANT Will have offsets relative to instruction (STUB!) address, not
   // function address!
   // TODO this should probably be renamed to just relocations, as I will not
@@ -278,16 +282,16 @@ public:
   //    std::vector<RelocationWithMAddress> relocations;
 
   ArmInstructionStub(const std::string &content, size_t size)
-      : content(content), size(size) {
+      : content(content), sizeBytes(size) {
 
     sizeAssert(content, size);
   }
 };
 
-using armStubWithRels_t =
+using ArmStubWithRels_t =
     std::pair<ArmInstructionStub, std::vector<RelocationWithMAddress>>;
 
-armStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a,
+ArmStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a,
                                         const std::vector<Relocation> &rel) {
   std::vector<RelocationWithMAddress> r;
   std::transform(rel.begin(), rel.end(), std::back_inserter(r),
@@ -300,50 +304,66 @@ armStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a,
   return {a, r};
 }
 
-armStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a) {
+ArmStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a) {
   return {a, std::vector<RelocationWithMAddress>()};
 }
 
 class JumpInstructionToFill {
   static const size_t SIZE = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
-  reg_t mnemonic;
-  address_t addressToConvert;
 
 public:
-  JumpInstructionToFill(const reg_t &mnemonic, address_t addressToConvert)
-      : mnemonic(mnemonic), addressToConvert(addressToConvert) {}
+  reg_t armMnemonic;
+  int64_t jmpImm;
 
-  size_t size() { return SIZE; }
+  JumpInstructionToFill(const reg_t &mnemonic, int64_t jmpImm)
+      : armMnemonic(mnemonic), jmpImm(jmpImm) {}
+
+  size_t sizeBytes() { return SIZE; }
 };
 
 class HandleInstrResult {
-  std::variant<armStubWithRels_t, JumpInstructionToFill> content;
+  std::variant<ArmStubWithRels_t, JumpInstructionToFill> content;
 
 public:
   static const size_t ARM_INSTRUCTION_STUB_TYPE = 0;
   static const size_t JUMP_INSTRUCTION_TO_FILL_TYPE = 1;
 
   explicit HandleInstrResult(
-      const std::variant<armStubWithRels_t, JumpInstructionToFill> &a)
+      const std::variant<ArmStubWithRels_t, JumpInstructionToFill> &a)
       : content(a) {}
 
   size_t getType() const { return content.index(); }
 
   size_t size() {
     if (getType() == ARM_INSTRUCTION_STUB_TYPE) {
-      const ArmInstructionStub &a = std::get<armStubWithRels_t>(content).first;
-      return a.size;
+      const ArmInstructionStub &a = std::get<ArmStubWithRels_t>(content).first;
+      return a.sizeBytes;
     } else if (getType() == JUMP_INSTRUCTION_TO_FILL_TYPE) {
-      return std::get<JumpInstructionToFill>(content).size();
+      return std::get<JumpInstructionToFill>(content).sizeBytes();
     } else {
       zerror("Wrong type of HandleInstrResult");
     }
   }
+
+  JumpInstructionToFill getJ() const {
+    return std::get<JumpInstructionToFill>(content);
+  }
+
+  ArmStubWithRels_t getA() const {
+    return std::get<ArmStubWithRels_t>(content);
+  }
 };
 
+// TODO refactor this terrible class
 class InstructionBuilder {
   // Lord forvie me for O(n^2) complexity of this code
   std::string ret;
+
+  static std::string makeInstr(const std::string &instruction,
+                               const std::string &arg1, const std::string &arg2,
+                               const std::string &arg3) {
+    return instruction + " " + arg1 + ", " + arg2 + ", " + arg3;
+  }
 
   static std::string makeInstr(const std::string &instruction,
                                const std::string &arg1,
@@ -366,6 +386,10 @@ public:
                      const std::string &arg2)
       : ret(makeInstr(instruction, arg1, arg2)) {}
 
+  InstructionBuilder append(const std::string &instruction) {
+    InstructionBuilder(ret + "\n" + instruction);
+  }
+
   InstructionBuilder append(const std::string &instruction,
                             const std::string &arg1) {
     InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1));
@@ -376,13 +400,19 @@ public:
     InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2));
   }
 
+  InstructionBuilder append(const std::string &instruction,
+                            const std::string &arg1, const std::string &arg2,
+                            const std::string &arg3) {
+    InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2, arg3));
+  }
+
   std::string build() { return ret; }
 };
 
 namespace InstructionConverterUtils {
 void commonMemAsserts(x86_op_mem mem) { assert(mem.index == 0); }
 
-armStubWithRels_t convertNonRelocableMemOperand(assemblyUtils::TmpKind tmp1Kind,
+ArmStubWithRels_t convertNonRelocableMemOperand(assemblyUtils::TmpKind tmp1Kind,
                                                 x86_op_mem op,
                                                 const reg_t &reg) {
   reg_t tmp164 =
@@ -422,7 +452,7 @@ armStubWithRels_t convertNonRelocableMemOperand(assemblyUtils::TmpKind tmp1Kind,
 // ROZMIAR_INSTRUKCJI_x86
 // https://reverseengineering.stackexchange.com/questions/17666/how-does-the-ldr-instruction-work-on-arm
 // Wczytaj op do reg
-armStubWithRels_t
+ArmStubWithRels_t
 convertRelocableMemOperand(const reg_t &reg, const RelocationWithMAddress &rel,
                            size_t operandPositionInInstruction,
                            size_t x86InsSize) {
@@ -443,11 +473,12 @@ convertRelocableMemOperand(const reg_t &reg, const RelocationWithMAddress &rel,
 // cmp qword ptr [rip + _], 2137 would be having relocation for byte 2
 // TODO maybe tmpToUse should ALWAYS be tmp1
 // It doesnt hurt us even when reg is tmp1 probably
-armStubWithRels_t readMemOpToReg(
+ArmStubWithRels_t readMemOpToReg(
     const std::vector<RelocationWithMAddress> &relocations, const reg_t &reg,
     x86_op_mem op, cs_insn *ins,
     assemblyUtils::TmpKind tmpToUse // tmpToUse is index of free tmp register
-    // this probably can be read from relocations[0].offset - ins->address
+                                    // this probably can be read from
+                                    // relocations[0].offset - ins->address
 ) {
   commonMemAsserts(op);
   switch (op.base) {
@@ -470,7 +501,7 @@ using namespace InstructionConverterUtils;
 
 namespace cmpHandler {
 namespace {
-armStubWithRels_t
+ArmStubWithRels_t
 handleCmpReg(cs_insn *ins,
              const std::vector<RelocationWithMAddress> &relatedRelocations) {
   switch (ins->detail->x86.operands[1].type) {
@@ -489,7 +520,7 @@ handleCmpReg(cs_insn *ins,
         assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1, memOpSize);
     auto c =
         readMemOpToReg(relatedRelocations, tmp, m, ins, assemblyUtils::TMP2);
-    c.first.size += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+    c.first.sizeBytes += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
     c.first.content =
         InstructionBuilder(c.first.content)
             .append("cmp",
@@ -503,7 +534,7 @@ handleCmpReg(cs_insn *ins,
   }
 }
 
-armStubWithRels_t
+ArmStubWithRels_t
 handleCmpMem(cs_insn *ins,
              const std::vector<RelocationWithMAddress> &relatedRelocations) {
   x86_op_mem m = ins->detail->x86.operands[0].mem;
@@ -511,7 +542,7 @@ handleCmpMem(cs_insn *ins,
   reg_t tmp =
       assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1, memOpSize);
   auto c = readMemOpToReg(relatedRelocations, tmp, m, ins, assemblyUtils::TMP2);
-  c.first.size += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+  c.first.sizeBytes += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
   c.first.content =
       InstructionBuilder(c.first.content)
           .append("cmp", tmp,
@@ -522,7 +553,7 @@ handleCmpMem(cs_insn *ins,
 
 } // namespace
 
-armStubWithRels_t
+ArmStubWithRels_t
 handleCmp(cs_insn *ins,
           const std::vector<RelocationWithMAddress> &relatedRelocations) {
   assert(ins->detail->x86.op_count == 2);
@@ -550,7 +581,7 @@ handleCmp(cs_insn *ins,
 
 namespace movHandler {
 namespace {
-armStubWithRels_t
+ArmStubWithRels_t
 handleMovReg(cs_insn *ins,
              const std::vector<RelocationWithMAddress> &relatedRelocations) {
   switch (ins->detail->x86.operands[1].type) {
@@ -596,7 +627,7 @@ handleMovReg(cs_insn *ins,
        assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES});
 }
 
-armStubWithRels_t handleMovMemNonRipBase(
+ArmStubWithRels_t handleMovMemNonRipBase(
     cs_insn *ins,
     const std::vector<RelocationWithMAddress> &relatedRelocations) {
   auto mem = ins->detail->x86.operands[0].mem;
@@ -653,7 +684,7 @@ armStubWithRels_t handleMovMemNonRipBase(
       {instr, assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 3});
 }
 
-armStubWithRels_t handleMovMemRipBase(
+ArmStubWithRels_t handleMovMemRipBase(
     cs_insn *ins,
     const std::vector<RelocationWithMAddress> &relatedRelocations) {
   auto m = ins->detail->x86.operands[0].mem;
@@ -682,7 +713,7 @@ armStubWithRels_t handleMovMemRipBase(
       {r});
 }
 
-armStubWithRels_t
+ArmStubWithRels_t
 handleMovMem(cs_insn *ins,
              const std::vector<RelocationWithMAddress> &relatedRelocations) {
   auto m = ins->detail->x86.operands[0].mem;
@@ -697,7 +728,7 @@ handleMovMem(cs_insn *ins,
 
 } // namespace
 
-armStubWithRels_t
+ArmStubWithRels_t
 handleMov(cs_insn *ins,
           const std::vector<RelocationWithMAddress> &relatedRelocations) {
   assert(ins->detail->x86.op_count = 2);
@@ -714,7 +745,7 @@ handleMov(cs_insn *ins,
 } // namespace movHandler
 
 namespace callHandler {
-armStubWithRels_t
+ArmStubWithRels_t
 handleCall(cs_insn *ins,
            const std::vector<RelocationWithMAddress> &relatedRelocations) {
   assert(ins->detail->x86.op_count == 1);
@@ -752,7 +783,7 @@ handleCall(cs_insn *ins,
 } // namespace callHandler
 
 namespace arithmeticInstructionHandler {
-armStubWithRels_t
+ArmStubWithRels_t
 handleAdd(cs_insn *ins,
           const std::vector<RelocationWithMAddress> &relatedRelocations) {
   assert(ins->detail->x86.op_count == 2);
@@ -771,7 +802,7 @@ handleAdd(cs_insn *ins,
           ));
 }
 
-armStubWithRels_t
+ArmStubWithRels_t
 handleSub(cs_insn *ins,
           const std::vector<RelocationWithMAddress> &relatedRelocations) {
   assert(ins->detail->x86.op_count == 2);
@@ -860,6 +891,7 @@ HandleInstrResult handleInstruction(
 struct JumpInstruction {
   size_t fromIndex;
   size_t toIndex;
+  JumpInstructionToFill jump;
 };
 
 class FunctionData {
@@ -867,6 +899,8 @@ class FunctionData {
   const int X64_EPILOGUE_SIZE = 2;
   const int ARM_PROLOG_SIZE_BYTES =
       assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2;
+  const int ARM_EPILOGUE_SIZE_BYTES =
+      assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 4;
   address_t baseAddress;
 
   CapstoneUtils utils;
@@ -875,13 +909,38 @@ class FunctionData {
 
   bool converted;
 
-  std::vector<ArmInstructionStub> armInstructions;
-  std::vector<address_t> armInstructionAddresses;
-
+  using ArmInstructionStubWithAddress =
+      std::pair<ArmInstructionStub, address_t>;
+  std::vector<ArmInstructionStubWithAddress> armInstructions;
   std::vector<JumpInstruction> jumps;
 
   // This will be needed for jumps
-  size_t findInstructionByRelativeAddress(address_t x) { todo("Implement"); }
+  size_t findInstructionByAddressFromBase(address_t addressFromBase) {
+    size_t it = 0;
+    while (it < numberOfInstructions && addressFromBase > insn[it].address) {
+      it++;
+    }
+    if (it == numberOfInstructions) {
+      zerror("Unable to find instruction by address");
+    }
+    if (insn[it].address != addressFromBase) {
+      zerror("Jump is not to the beinning of instruction");
+    }
+    return it;
+  }
+
+  address_t getNewInstructionAddress() {
+    if (armInstructions.empty()) {
+      return 0;
+    } else {
+      return armInstructions.back().second +
+             armInstructions.back().first.sizeBytes;
+    }
+  }
+
+  void addArmInstruction(const ArmInstructionStub &a) {
+    armInstructions.emplace_back(a, getNewInstructionAddress());
+  }
 
   // TODO nie obsługuję skoczenia do ŚRODKA prologu (umiem skoczyć jedynie na
   // początek)
@@ -892,19 +951,13 @@ class FunctionData {
     assert(strEqual(insn[2].mnemonic, "mov") &&
            strEqual(insn[2].op_str, "rbp, rsp"));
 
-    armInstructions.push_back(
-        ArmInstructionStub
-
-            InstructionBuilder("stp x29, x30, [sp, #-16]!")
-                .append("mov", "x29", "sp")
-                .build());
-
-    armInstructions.emplace_back("");
-    armInstructions.emplace_back("");
-
-    armInstructionAddresses.push_back(0);
-    armInstructionAddresses.push_back(ARM_PROLOG_SIZE_BYTES);
-    armInstructionAddresses.push_back(ARM_PROLOG_SIZE_BYTES);
+    addArmInstruction(
+        ArmInstructionStub(InstructionBuilder("stp x29, x30, [sp, #-16]!")
+                               .append("mov", "x29", "sp")
+                               .build(),
+                           ARM_PROLOG_SIZE_BYTES));
+    addArmInstruction(ArmInstructionStub("", 0));
+    addArmInstruction(ArmInstructionStub("", 0));
   }
 
   // TODO nie obsługuję skoczenia do ŚRODKA epilogu (umiem skoczyć jedynie na
@@ -913,11 +966,14 @@ class FunctionData {
     assert(strEqual(insn[numberOfInstructions - 2].mnemonic, "leave"));
     assert(strEqual(insn[numberOfInstructions - 1].mnemonic, "ret"));
 
-    armInstructions.emplace_back("mov x0, x9\n"
-                                 "add sp, x29, #16\n"
-                                 "ldp x29, x30, [sp, #-16]\n"
-                                 "ret");
-    armInstructions.emplace_back("");
+    addArmInstruction(ArmInstructionStub("", 0));
+    addArmInstruction(
+        ArmInstructionStub(InstructionBuilder("mov", "x0", "x9")
+                               .append("add", "sp", "x29", "#16")
+                               .append("ldp", "x29", "x30", "[sp, #-16]")
+                               .append("ret")
+                               .build(),
+                           ARM_EPILOGUE_SIZE_BYTES));
   }
 
   static bool
@@ -928,9 +984,18 @@ class FunctionData {
            offsetFromBase <= instructionOffsetFromBase + instructionSize;
   }
 
-  address_t getLastInstructionAddress() {
-    assert(armInstructionAddresses.size() > 0);
-  }
+  void handleJumps() {
+    for (const auto &it : jumps) {
+       address_t dstAbsoluteAddress = armInstructions[it.toIndex].second;
+       address_t srcAbsoluteAddress = armInstructions[it.fromIndex].second;
+
+       // TODO czy ta konwersja jest dobra.
+       int64_t difference = (int64_t) dstAbsoluteAddress - (int64_t) srcAbsoluteAddress;
+       armInstructions[it.fromIndex].first = ArmInstructionStub(InstructionBuilder(it.jump.armMnemonic, assemblyUtils::armImmidiate()));
+    }
+  };
+
+  address_t getRip(cs_insn *ins) { return ins->address + ins->size; }
 
 public:
   FunctionData(const char *rawData, size_t size, address_t baseAddress) {
@@ -941,11 +1006,13 @@ public:
     baseAddress = baseAddress;
   }
 
-  std::vector<Relocation> convert(std::vector<Relocation> relatedRelocations) {
+  std::vector<RelocationWithMAddress>
+  convert(std::vector<Relocation> relatedRelocations) {
     assert(std::is_sorted(
         relatedRelocations.begin(), relatedRelocations.end(),
         [](auto r1, auto r2) -> bool { return r1.offset < r2.offset; }));
     std::queue<RelocationWithMAddress> q;
+    std::vector<RelocationWithMAddress> armRels;
 
     for (const auto &r : relatedRelocations) {
       RelocationWithMAddress rM(r);
@@ -955,7 +1022,7 @@ public:
     }
 
     convertPrologue();
-    for (int i = X64_PROLOGUE_SIZE;
+    for (size_t i = X64_PROLOGUE_SIZE;
          i < numberOfInstructions - X64_EPILOGUE_SIZE; i++) {
       todo("Check if relocation is in this instruction");
       std::vector<RelocationWithMAddress> r;
@@ -965,21 +1032,46 @@ public:
         r.push_back(q.front());
         q.pop();
       }
-      auto c = InstructionConverter::handleInstruction(&insn[i], r);
+      HandleInstrResult c =
+          InstructionConverter::handleInstruction(&insn[i], r);
+      switch (c.getType()) {
+      case HandleInstrResult::JUMP_INSTRUCTION_TO_FILL_TYPE: {
+        JumpInstructionToFill j = c.getJ();
+        size_t toIndex =
+            findInstructionByAddressFromBase(j.jmpImm + getRip(&insn[i]));
+        JumpInstruction jumpInstruction{
+            .fromIndex = i, .toIndex = toIndex, .jump = j};
 
-      todo("Adjust relocations returned by converter - they are relative to "
-           "instruction address, should be changed relative to section base "
-           "address");
+        jumps.push_back(jumpInstruction);
+
+        addArmInstruction(ArmInstructionStub("", j.sizeBytes()));
+        break;
+      }
+      case HandleInstrResult::ARM_INSTRUCTION_STUB_TYPE: {
+        address_t newInstrAddress = getNewInstructionAddress();
+        ArmStubWithRels_t armStubWithRels = c.getA();
+        addArmInstruction(armStubWithRels.first);
+        for (auto &rel : armStubWithRels.second) {
+          rel.maddress.setRelativeToFunction(
+              rel.maddress.getRelativeToInstruction() + newInstrAddress);
+        }
+        armRels.insert(armRels.end(), armStubWithRels.second.begin(),
+                       armStubWithRels.second.end());
+        break;
+      }
+      }
     }
     convertEpilogue();
+
+    handleJumps();
   }
 
   // This probably will not be neccessaru
-  address_t getNewAddress(address_t oldAddress) {
-    if (!converted) {
-      zerror("Function hasn't been converted yet");
-    }
-  }
+  //  address_t getNewAddress(address_t oldAddress) {
+  //    if (!converted) {
+  //      zerror("Function hasn't been converted yet");
+  //    }
+  //  }
 };
 
 struct SectionData {
@@ -992,7 +1084,7 @@ class SectionManager {
   SectionData originalSectionData;
   SectionData newSectionData;
   std::vector<FunctionData> functions;
-  std::vector<std::vector<Relocation>> functionsRelocations;
+  std::vector<std::vector<RelocationWithMAddress>> functionsRelocations;
 
 public:
   explicit SectionManager(section *originalSection, section *newSection) {
