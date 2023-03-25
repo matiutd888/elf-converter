@@ -423,7 +423,7 @@ public:
     std::string build() { return ret; }
 };
 
-namespace InstructionConverter {
+namespace InstructionConverterUtils {
     void commonMemAsserts(x86_op_mem mem) { assert(mem.index == 0); }
 
     armStubWithRels_t convertNonRelocableMemOperand(assemblyUtils::TmpKind tmp1Kind, x86_op_mem op,
@@ -502,6 +502,10 @@ namespace InstructionConverter {
                 return convertNonRelocableMemOperand(tmpToUse, op, reg);
         }
     }
+}
+
+namespace InstructionConverter {
+    using namespace InstructionConverterUtils;
 
     namespace cmpHandler {
         namespace {
@@ -599,7 +603,6 @@ namespace InstructionConverter {
             }
         }
     }
-
 
     namespace movHandler {
         namespace {
@@ -759,7 +762,6 @@ namespace InstructionConverter {
             }
         }
     }
-
 
     namespace callHandler {
         armStubWithRels_t
