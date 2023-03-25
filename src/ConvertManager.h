@@ -12,7 +12,7 @@
 #include <optional>
 #include <ostream>
 #include <algorithm>
-
+#include <variant>
 
 using namespace ELFIO;
 
@@ -158,7 +158,7 @@ namespace assemblyUtils {
 
     // Works for Arm and x86
     reg_t convertRegisterMemSize(Arch arch, MemSize memSize, const reg_t &r) {
-        std::string suffix = r.substr(1, r.size() - 1);
+        std::string suffix = r.substr(1, r.length() - 1);
         reg_t r64 = memPrefix[arch][memSize] + suffix;
         return r64;
     }
@@ -266,7 +266,6 @@ public:
     // But this is just an idea.
     std::vector<Relocation> changedRelocations;
 
-
     ArmInstructionStub(const std::string &content, size_t size,
                        const std::vector<Relocation> &changedRelocations) : content(content),
                                                                             size(size),
@@ -284,6 +283,46 @@ public:
     }
 
 };
+
+class JumpInstructionToFill {
+    static const size_t SIZE = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+    reg_t mnemonic;
+    address_t addressToConvert;
+public:
+    JumpInstructionToFill(const reg_t &mnemonic, address_t addressToConvert) : mnemonic(mnemonic),
+                                                                               addressToConvert(addressToConvert) {
+
+    }
+
+    size_t size() {
+        return SIZE;
+    }
+};
+
+class HandleInstrResult {
+    std::variant<ArmInstructionStub, JumpInstructionToFill> content;
+public:
+    static const size_t ARM_INSTRUCTION_STUB_TYPE = 0;
+    static const size_t JUMP_INSTRUCTION_TO_FILL_TYPE = 1;
+
+    explicit HandleInstrResult(const std::variant<ArmInstructionStub, JumpInstructionToFill> &a) : content(a) {}
+
+    size_t getType() const {
+        return content.index();
+    }
+
+    size_t size() {
+        if (getType() == ARM_INSTRUCTION_STUB_TYPE) {
+            const ArmInstructionStub &a = std::get<ArmInstructionStub>(content);
+            return a.size;
+        } else if (getType() == JUMP_INSTRUCTION_TO_FILL_TYPE) {
+            return std::get<JumpInstructionToFill>(content).size();
+        } else {
+            zerror("Wrong type of HandleInstrResult");
+        }
+    }
+};
+
 
 class InstructionBuilder {
     // Lord forvie me for O(n^2) complexity of this code
@@ -478,10 +517,9 @@ namespace InstructionConverter {
 
         ArmInstructionStub
         handleCmp(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
-            auto detail = ins->detail;
-            assert(detail->x86.op_count == 2);
+            assert(ins->detail->x86.op_count == 2);
             assert(relatedRelocations.empty());
-            switch (detail->x86.operands[0].type) {
+            switch (ins->detail->x86.operands[0].type) {
                 case X86_OP_REG:
                     return handleCmpReg(ins, relatedRelocations);
                 case X86_OP_MEM:
@@ -660,8 +698,7 @@ namespace InstructionConverter {
     namespace callHandler {
         ArmInstructionStub
         handleCall(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
-            auto detail = ins->detail;
-            assert(detail->x86.op_count == 1);
+            assert(ins->detail->x86.op_count == 1);
             assert(relatedRelocations.size() == 1);
 
             // fAddr: f
@@ -699,15 +736,14 @@ namespace InstructionConverter {
     namespace arithmeticInstructionHandler {
         ArmInstructionStub
         handleAdd(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
-            auto detail = ins->detail;
-            assert(detail->x86.op_count == 2);
-            assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
+            assert(ins->detail->x86.op_count == 2);
+            assert(ins->detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
             assert(relatedRelocations.empty());
 
             auto c = ArmInstructionStub(
                     InstructionBuilder("add",
-                                       assemblyUtils::armConvertOp(detail->x86.operands[0]),
-                                       assemblyUtils::armConvertOp(detail->x86.operands[1])).build(),
+                                       assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                                       assemblyUtils::armConvertOp(ins->detail->x86.operands[1])).build(),
                     assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES
             );
             return c;
@@ -715,34 +751,93 @@ namespace InstructionConverter {
 
         ArmInstructionStub
         handleSub(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
-            auto detail = ins->detail;
-            assert(detail->x86.op_count == 2);
-            assert(detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
+            assert(ins->detail->x86.op_count == 2);
+            assert(ins->detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
             assert(relatedRelocations.empty());
 
             auto c = ArmInstructionStub(
                     InstructionBuilder("sub",
-                                       assemblyUtils::armConvertOp(detail->x86.operands[0]),
-                                       assemblyUtils::armConvertOp(detail->x86.operands[1])).build(),
+                                       assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                                       assemblyUtils::armConvertOp(ins->detail->x86.operands[1])).build(),
                     assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES
             );
             return c;
         }
     } // namespace arithmeticInstructionHandler
 
+    namespace jmpHandler {
+        namespace {
+            std::map<std::string, std::string> conditionalMap = {
+                    {"a",   "hi"},
+                    {"ae",  "hs"},
+                    {"b",   "lo"},
+                    {"be",  "ls"},
+                    {"e",   "eq"},
+                    {"g",   "gt"},
+                    {"ge",  "ge"},
+                    {"l",   "lt"},
+                    {"le",  "le"},
+                    {"na",  "ls"},
+                    {"nae", "lo"},
+                    {"nb",  "hs"},
+                    {"nbe", "hi"},
+                    {"ne",  "ne"},
+                    {"ng",  "le"},
+                    {"nge", "lt"},
+                    {"nl",  "ge"},
+                    {"nle", "gt"},
+                    {"no",  "vc"},
+                    {"nz",  "ne"},
+                    {"o",   "vs"},
+                    {"z",   "eq"},
+            };
+        }
 
-    ArmInstructionStub
-    convertInstruction(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+        bool isConditionalJump(const std::string &mnemonic) {
+            if (mnemonic.length() == 0) {
+                return false;
+            }
+            if (mnemonic[0] != 'j') {
+                return false;
+            }
+            return conditionalMap.find(mnemonic.substr(1, mnemonic.length() - 1)) != conditionalMap.end();
+        }
+
+        JumpInstructionToFill handleJmp(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            assert(ins->detail->x86.op_count == 1);
+            assert(relatedRelocations.empty());
+            assert(ins->detail->x86.operands[0].type == X86_OP_IMM);
+
+            return JumpInstructionToFill("b", ins->detail->x86.operands[0].imm);
+        }
+
+        JumpInstructionToFill handleConditionalJmp(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
+            assert(ins->detail->x86.op_count == 1);
+            assert(relatedRelocations.empty());
+            assert(ins->detail->x86.operands[0].type == X86_OP_IMM);
+
+
+            std::string mnemonic = std::string(ins->mnemonic);
+            std::string armSuffix = conditionalMap[mnemonic.substr(1, mnemonic.length() - 1)];
+            return JumpInstructionToFill("b" + armSuffix, ins->detail->x86.operands[0].imm);
+        }
+    }
+
+    HandleInstrResult handleInstruction(cs_insn *ins, const std::vector<Relocation> &relatedRelocations) {
         if (strEqual(ins->mnemonic, "add")) {
-            return arithmeticInstructionHandler::handleAdd(ins, relatedRelocations);
+            return HandleInstrResult(arithmeticInstructionHandler::handleAdd(ins, relatedRelocations));
         } else if (strEqual(ins->mnemonic, "sub")) {
-            return arithmeticInstructionHandler::handleSub(ins, relatedRelocations);
+            return HandleInstrResult(arithmeticInstructionHandler::handleSub(ins, relatedRelocations));
         } else if (strEqual(ins->mnemonic, "cmp")) {
-            return cmpHandler::handleCmp(ins, relatedRelocations);
+            return HandleInstrResult(cmpHandler::handleCmp(ins, relatedRelocations));
         } else if (strEqual(ins->mnemonic, "call")) {
-            return callHandler::handleCall(ins, relatedRelocations);
+            return HandleInstrResult(callHandler::handleCall(ins, relatedRelocations));
         } else if (strEqual(ins->mnemonic, "mov")) {
-            return movHandler::handleMov(ins, relatedRelocations);
+            return HandleInstrResult(movHandler::handleMov(ins, relatedRelocations));
+        } else if (strEqual(ins->mnemonic, "jmp")) {
+            return HandleInstrResult(jmpHandler::handleJmp(ins, relatedRelocations));
+        } else if (jmpHandler::isConditionalJump(ins->mnemonic)) {
+            return HandleInstrResult(jmpHandler::handleConditionalJmp(ins, relatedRelocations));
         }
     }
 
@@ -843,7 +938,7 @@ public:
                 r.push_back(relatedRelocations[currentRelocationIndex]);
                 currentRelocationIndex++;
             }
-            auto c = InstructionConverter::convertInstruction(&insn[i], r);
+            auto c = InstructionConverter::handleInstruction(&insn[i], r);
             todo("Adjust relocations returned by converter - they are relative to "
                  "instruction address, should be changed relative to section base "
                  "address");
