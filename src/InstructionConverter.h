@@ -2,9 +2,11 @@
 // Created by mateusz on 26.03.23.
 //
 
+
+using address_t = ELFIO::Elf64_Addr;
+
 #ifndef CONVERTERPROJECT_INSTRUCTIONCONVERTER_H
 #define CONVERTERPROJECT_INSTRUCTIONCONVERTER_H
-
 
 #include "AssemblyUtils.h"
 #include "ConvertManager.h"
@@ -15,16 +17,14 @@
 
 #define strEqual(I, J) (strcmp((I), (J)) == 0)
 
-using address_t = ELFIO::Elf64_Addr;
-
 struct ArmInstructionStub {
     static void sizeAssert(const std::string &content, size_t size) {
         if (content.empty()) {
             assert(size == 0);
         } else {
-            assert(size % assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES == 0);
+            assert(size % AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES == 0);
             assert(std::count(content.begin(), content.end(), '\n') + 1 ==
-                   size / assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES);
+                   size / AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES);
         }
     }
 
@@ -72,23 +72,23 @@ public:
         : ret(makeInstr(instruction, arg1, arg2)) {}
 
     InstructionBuilder append(const std::string &instruction) {
-        InstructionBuilder(ret + "\n" + instruction);
+        return InstructionBuilder(ret + "\n" + instruction);
     }
 
     InstructionBuilder append(const std::string &instruction,
                               const std::string &arg1) {
-        InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1));
+        return  InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1));
     }
 
     InstructionBuilder append(const std::string &instruction,
                               const std::string &arg1, const std::string &arg2) {
-        InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2));
+        return InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2));
     }
 
     InstructionBuilder append(const std::string &instruction,
                               const std::string &arg1, const std::string &arg2,
                               const std::string &arg3) {
-        InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2, arg3));
+        return InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2, arg3));
     }
 
     std::string build() { return ret; }
@@ -125,7 +125,7 @@ public:
 };
 
 class RelocationWithMAddress {
-    Relocation r;
+    ElfStructures::Relocation r;
 
 public:
     MAddress maddress;
@@ -136,7 +136,7 @@ public:
 
     Elf_Sxword addend() const { return r.addend; }
 
-    explicit RelocationWithMAddress(const Relocation &r) : r(r) {}
+    explicit RelocationWithMAddress(const ElfStructures::Relocation &r) : r(r) {}
 };
 
 
@@ -144,10 +144,10 @@ using ArmStubWithRels_t =
         std::pair<ArmInstructionStub, std::vector<RelocationWithMAddress>>;
 
 ArmStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a,
-                                        const std::vector<Relocation> &rel) {
+                                        const std::vector<ElfStructures::Relocation> &rel) {
     std::vector<RelocationWithMAddress> r;
     std::transform(rel.begin(), rel.end(), std::back_inserter(r),
-                   [](Relocation r) -> RelocationWithMAddress {
+                   [](ElfStructures::Relocation r) -> RelocationWithMAddress {
                        auto ret = RelocationWithMAddress(r);
                        ret.maddress.setRelativeToInstruction(r.offset);
                        return ret;
@@ -164,18 +164,18 @@ ArmStubWithRels_t createArmStubWithRels(const ArmInstructionStub &a) {
 namespace InstructionConverterUtils {
     void commonMemAsserts(x86_op_mem mem) { assert(mem.index == 0); }
 
-    ArmStubWithRels_t convertNonRelocableMemOperand(assemblyUtils::TmpKind tmp1Kind,
+    ArmStubWithRels_t convertNonRelocableMemOperand(AssemblyUtils::TmpKind tmp1Kind,
                                                     x86_op_mem op,
                                                     const reg_t &reg) {
         reg_t tmp164 =
-                assemblyUtils::getTmpRegByMemOpSize(tmp1Kind, assemblyUtils::MEM64);
+                AssemblyUtils::getTmpRegByMemOpSize(tmp1Kind, AssemblyUtils::MEM64);
         return createArmStubWithRels(ArmInstructionStub(
-                InstructionBuilder("mov", tmp164, assemblyUtils::armImmidiate(op.disp))
+                InstructionBuilder("mov", tmp164, AssemblyUtils::armImmidiate(op.disp))
                         .append(
                                 "ldr", reg,
-                                assemblyUtils::armMemOp(assemblyUtils::armReg(op.base), tmp164))
+                                AssemblyUtils::armMemOp(AssemblyUtils::armReg(op.base), tmp164))
                         .build(),
-                assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2));
+                AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2));
     }
 
     // Przyklad
@@ -208,14 +208,14 @@ namespace InstructionConverterUtils {
     convertRelocableMemOperand(const reg_t &reg, const RelocationWithMAddress &rel,
                                size_t operandPositionInInstruction,
                                size_t x86InsSize) {
-        Relocation retRel(0, rel.symbol(), R_AARCH64_LD_PREL_LO19,
+        ElfStructures::Relocation retRel(0, rel.symbol(), R_AARCH64_LD_PREL_LO19,
                           rel.addend() + (Elf_Sword) x86InsSize -
                                   (Elf_Sword) operandPositionInInstruction);
         return createArmStubWithRels(
                 ArmInstructionStub(
-                        InstructionBuilder("ldr", reg, assemblyUtils::armImmidiate(0))
+                        InstructionBuilder("ldr", reg, AssemblyUtils::armImmidiate(0))
                                 .build(),
-                        assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
+                        AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
                 {retRel});
     }
 
@@ -228,7 +228,7 @@ namespace InstructionConverterUtils {
     ArmStubWithRels_t readMemOpToReg(
             const std::vector<RelocationWithMAddress> &relocations, const reg_t &reg,
             x86_op_mem op, cs_insn *ins,
-            assemblyUtils::TmpKind tmpToUse// tmpToUse is index of free tmp register
+            AssemblyUtils::TmpKind tmpToUse// tmpToUse is index of free tmp register
                                            // this probably can be read from
                                            // relocations[0].offset - ins->address
     ) {
@@ -250,7 +250,7 @@ namespace InstructionConverterUtils {
 
 
 class JumpInstructionToFill {
-    static const size_t SIZE = assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+    static const size_t SIZE = AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
 
 public:
     reg_t armMnemonic;
@@ -308,22 +308,22 @@ namespace InstructionConverter {
                     case X86_OP_IMM:
                         return createArmStubWithRels(ArmInstructionStub(
                                 InstructionBuilder(
-                                        "cmp", assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
-                                        assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                                        "cmp", AssemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                                        AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
                                         .build(),
-                                assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES));
+                                AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES));
                     case X86_OP_MEM: {
                         x86_op_mem m = ins->detail->x86.operands[1].mem;
-                        auto memOpSize = assemblyUtils::getMemOpSize(ins->detail->x86.operands[1]);
+                        auto memOpSize = AssemblyUtils::getMemOpSize(ins->detail->x86.operands[1]);
                         reg_t tmp =
-                                assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1, memOpSize);
+                                AssemblyUtils::getTmpRegByMemOpSize(AssemblyUtils::TMP1, memOpSize);
                         auto c =
-                                readMemOpToReg(relatedRelocations, tmp, m, ins, assemblyUtils::TMP2);
-                        c.first.sizeBytes += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+                                readMemOpToReg(relatedRelocations, tmp, m, ins, AssemblyUtils::TMP2);
+                        c.first.sizeBytes += AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
                         c.first.content =
                                 InstructionBuilder(c.first.content)
                                         .append("cmp",
-                                                assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                                                AssemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
                                                 tmp)
                                         .build();
                         return c;
@@ -337,15 +337,15 @@ namespace InstructionConverter {
             handleCmpMem(cs_insn *ins,
                          const std::vector<RelocationWithMAddress> &relatedRelocations) {
                 x86_op_mem m = ins->detail->x86.operands[0].mem;
-                auto memOpSize = assemblyUtils::getMemOpSize(ins->detail->x86.operands[0]);
+                auto memOpSize = AssemblyUtils::getMemOpSize(ins->detail->x86.operands[0]);
                 reg_t tmp =
-                        assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1, memOpSize);
-                auto c = readMemOpToReg(relatedRelocations, tmp, m, ins, assemblyUtils::TMP2);
-                c.first.sizeBytes += assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
+                        AssemblyUtils::getTmpRegByMemOpSize(AssemblyUtils::TMP1, memOpSize);
+                auto c = readMemOpToReg(relatedRelocations, tmp, m, ins, AssemblyUtils::TMP2);
+                c.first.sizeBytes += AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES;
                 c.first.content =
                         InstructionBuilder(c.first.content)
                                 .append("cmp", tmp,
-                                        assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                                        AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
                                 .build();
                 return c;
             }
@@ -387,25 +387,25 @@ namespace InstructionConverter {
                     case x86_op_type::X86_OP_MEM:
                         return readMemOpToReg(
                                 relatedRelocations,
-                                assemblyUtils::armReg(ins->detail->x86.operands[0].reg),
-                                ins->detail->x86.operands[1].mem, ins, assemblyUtils::TMP1);
+                                AssemblyUtils::armReg(ins->detail->x86.operands[0].reg),
+                                ins->detail->x86.operands[1].mem, ins, AssemblyUtils::TMP1);
                     case x86_op_type::X86_OP_IMM:
                         if (!relatedRelocations.empty() &&
                             (relatedRelocations[0].type() == R_X86_64_32 ||
                              relatedRelocations[0].type() == R_X86_64_32S)) {
 
                             // Addendu nie zmieniamy, bo relokacja nie jest relatywna
-                            Relocation r(0, relatedRelocations[0].symbol(), R_AARCH64_ADR_PREL_LO21,
+                            ElfStructures::Relocation r(0, relatedRelocations[0].symbol(), R_AARCH64_ADR_PREL_LO21,
                                          relatedRelocations[0].addend());
                             auto instr =
                                     InstructionBuilder("adr",
-                                                       assemblyUtils::convertRegisterMemSize(
-                                                               assemblyUtils::X86_64, assemblyUtils::MEM64,
+                                                       AssemblyUtils::convertRegisterMemSize(
+                                                               AssemblyUtils::X86_64, AssemblyUtils::MEM64,
                                                                CapstoneUtils::getInstance().getRegName(ins->detail->x86.operands[0].reg)),
-                                                       assemblyUtils::armImmidiate(0))
+                                                       AssemblyUtils::armImmidiate(0))
                                             .build();
                             return createArmStubWithRels(
-                                    ArmInstructionStub(instr, assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
+                                    ArmInstructionStub(instr, AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
                                     {r});
                         } else {
                             break;
@@ -417,10 +417,10 @@ namespace InstructionConverter {
                 }
                 return createArmStubWithRels(
                         {InstructionBuilder(
-                                 "mov", assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
-                                 assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                                 "mov", AssemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                                 AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
                                  .build(),
-                         assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES});
+                         AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES});
             }
 
             ArmStubWithRels_t handleMovMemNonRipBase(
@@ -436,26 +436,26 @@ namespace InstructionConverter {
                             // Addendu nie zmieniamy, bo w nierelatywnych (R_X86_64_32, R_X86_64_32S)
                             // relokacjach położenie określane było przez po prostu adres symbolu +
                             // addend
-                            Relocation r =
-                                    Relocation(0, relatedRelocations[0].symbol(), R_AARCH64_ADR_PREL_LO21,
+                            ElfStructures::Relocation r =
+                                    ElfStructures::Relocation(0, relatedRelocations[0].symbol(), R_AARCH64_ADR_PREL_LO21,
                                                relatedRelocations[0].addend());
-                            auto tmp164 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1,
-                                                                              assemblyUtils::MEM64);
-                            auto tmp264 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP2,
-                                                                              assemblyUtils::MEM64);
+                            auto tmp164 = AssemblyUtils::getTmpRegByMemOpSize(AssemblyUtils::TMP1,
+                                                                              AssemblyUtils::MEM64);
+                            auto tmp264 = AssemblyUtils::getTmpRegByMemOpSize(AssemblyUtils::TMP2,
+                                                                              AssemblyUtils::MEM64);
                             auto instr =
-                                    InstructionBuilder("adr", tmp164, assemblyUtils::armImmidiate(0))
-                                            .append("mov", tmp264, assemblyUtils::armImmidiate(mem.disp))
+                                    InstructionBuilder("adr", tmp164, AssemblyUtils::armImmidiate(0))
+                                            .append("mov", tmp264, AssemblyUtils::armImmidiate(mem.disp))
                                             .append(
                                                     "str",
-                                                    assemblyUtils::getTmpRegByMemOpSize(
-                                                            assemblyUtils::TMP1, assemblyUtils::getMemOpSize(ins->detail->x86.operands[0])),
-                                                    assemblyUtils::armMemOp(assemblyUtils::armReg(mem.base),
+                                                    AssemblyUtils::getTmpRegByMemOpSize(
+                                                            AssemblyUtils::TMP1, AssemblyUtils::getMemOpSize(ins->detail->x86.operands[0])),
+                                                    AssemblyUtils::armMemOp(AssemblyUtils::armReg(mem.base),
                                                                             tmp264))
                                             .build();
                             return createArmStubWithRels(
                                     ArmInstructionStub(instr,
-                                                       assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 3),
+                                                       AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 3),
                                     {r});
                         }
                     }
@@ -464,20 +464,20 @@ namespace InstructionConverter {
                     default:
                         zerror("handleMovMemNonRipBase: Invalid operand type");
                 }
-                auto tmp1 = assemblyUtils::getTmpRegByMemOpSize(
-                        assemblyUtils::TMP1, assemblyUtils::getMemOpSize(ins->detail->x86.operands[0]));
-                auto tmp264 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP2,
-                                                                  assemblyUtils::MEM64);
+                auto tmp1 = AssemblyUtils::getTmpRegByMemOpSize(
+                        AssemblyUtils::TMP1, AssemblyUtils::getMemOpSize(ins->detail->x86.operands[0]));
+                auto tmp264 = AssemblyUtils::getTmpRegByMemOpSize(AssemblyUtils::TMP2,
+                                                                  AssemblyUtils::MEM64);
                 auto instr = InstructionBuilder(
                                      "mov", tmp1,
-                                     assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
-                                     .append("mov", tmp264, assemblyUtils::armImmidiate(mem.disp))
+                                     AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                                     .append("mov", tmp264, AssemblyUtils::armImmidiate(mem.disp))
                                      .append("str", tmp1,
-                                             assemblyUtils::armMemOp(
-                                                     assemblyUtils::armReg(mem.base), tmp264))
+                                             AssemblyUtils::armMemOp(
+                                                     AssemblyUtils::armReg(mem.base), tmp264))
                                      .build();
                 return createArmStubWithRels(
-                        {instr, assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 3});
+                        {instr, AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 3});
             }
 
             ArmStubWithRels_t handleMovMemRipBase(
@@ -491,20 +491,20 @@ namespace InstructionConverter {
                 Elf_Sxword newAddend = relatedRelocations[0].addend() +
                                        (Elf_Sxword) ins->size -
                                        (Elf_Sxword) relocationOffsetInInstruction;
-                Relocation r = Relocation(0, relatedRelocations[0].symbol(),
+                ElfStructures::Relocation r = ElfStructures::Relocation(0, relatedRelocations[0].symbol(),
                                           R_AARCH64_ADR_PREL_LO21, newAddend);
-                reg_t tmp2 = assemblyUtils::getTmpRegByMemOpSize(
-                        assemblyUtils::TMP2, assemblyUtils::getMemOpSize(ins->detail->x86.operands[0]));
-                reg_t tmp164 = assemblyUtils::getTmpRegByMemOpSize(assemblyUtils::TMP1,
-                                                                   assemblyUtils::MEM64);
+                reg_t tmp2 = AssemblyUtils::getTmpRegByMemOpSize(
+                        AssemblyUtils::TMP2, AssemblyUtils::getMemOpSize(ins->detail->x86.operands[0]));
+                reg_t tmp164 = AssemblyUtils::getTmpRegByMemOpSize(AssemblyUtils::TMP1,
+                                                                   AssemblyUtils::MEM64);
                 auto instr =
-                        InstructionBuilder("adr", tmp164, assemblyUtils::armImmidiate(0))
+                        InstructionBuilder("adr", tmp164, AssemblyUtils::armImmidiate(0))
                                 .append("mov", tmp2,
-                                        assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
-                                .append("str", tmp2, assemblyUtils::armMemOp(tmp164))
+                                        AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                                .append("str", tmp2, AssemblyUtils::armMemOp(tmp164))
                                 .build();
                 return createArmStubWithRels(
-                        ArmInstructionStub(instr, 3 * assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
+                        ArmInstructionStub(instr, 3 * AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
                         {r});
             }
 
@@ -565,14 +565,14 @@ namespace InstructionConverter {
             // newAddr = symAddr + a2
             // symAddr + a + 4 = symAdr + a2
             // a2 = a + 4
-            Relocation r = Relocation(0, relatedRelocations[0].symbol(), R_AARCH64_CALL26,
+            ElfStructures::Relocation r = ElfStructures::Relocation(0, relatedRelocations[0].symbol(), R_AARCH64_CALL26,
                                       relatedRelocations[0].addend() + 4);
             return createArmStubWithRels(
                     ArmInstructionStub(
-                            InstructionBuilder("bl", assemblyUtils::armImmidiate(0))
+                            InstructionBuilder("bl", AssemblyUtils::armImmidiate(0))
                                     .append("mov", "x9", "x0")
                                     .build(),
-                            assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2),
+                            AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 2),
                     {r});
         }
     }// namespace callHandler
@@ -589,10 +589,10 @@ namespace InstructionConverter {
 
                     createArmStubWithRels(ArmInstructionStub(
                             InstructionBuilder(
-                                    "add", assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
-                                    assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                                    "add", AssemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                                    AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
                                     .build(),
-                            assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES
+                            AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES
 
                             ));
         }
@@ -606,10 +606,10 @@ namespace InstructionConverter {
 
             return createArmStubWithRels(ArmInstructionStub(
                     InstructionBuilder(
-                            "sub", assemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
-                            assemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
+                            "sub", AssemblyUtils::armConvertOp(ins->detail->x86.operands[0]),
+                            AssemblyUtils::armConvertOp(ins->detail->x86.operands[1]))
                             .build(),
-                    assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES));
+                    AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES));
         }
 
     }// namespace arithmeticInstructionHandler

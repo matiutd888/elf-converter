@@ -21,19 +21,8 @@
 
 using namespace ELFIO;
 
-#define mDebug (std::cout << "DEBUG: ")
-#define mWarn (std::cout << "WARN: ")
-#define todo(S) zerror("TODO: " S)
-
-// TODO więcej assertów do relokacji / braku relokajci?
-
-class FileChecker {
-public:
-    static bool checkFile(const elfio &file);
-};
-
 class SectionBuilder {
-    SectionData data;
+    ElfStructures::SectionData data;
     std::vector<unsigned char> bytes;
 
 public:
@@ -53,85 +42,28 @@ public:
         data.relatedRelocationsection = relatedRelocationSection;
     }
 
-    void addConvertedFunctionData(const Symbol &originalSymbol, const ConvertedFunctionData &fData) {
-        address_t functionAddress = bytes.size();
-        size_t fSize = fData.getFunctionSize();
-        std::string content = fData.getContent();
-
-        mDebug << "---------------------------------" << std::endl;
-        mDebug << "Adding converted function data" << std::endl;
-        mDebug << std::endl;
-        mDebug << "function content: " << std::endl;
-        mDebug << content << std::endl;
-        mDebug << "End of function content" << std::endl;
-        mDebug << "-----------------------------" << std::endl;
-
-
-        for (const auto &it: fData.getRelocations()) {
-            MAddress addr = it.maddress;
-            addr.setRelativeToSection(addr.getRelativeToFunction() + functionAddress);
-            data.relocations.emplace_back(addr.getRelativeToSection(), it.symbol(), it.type(), it.addend());
-        }
-
-        {
-            unsigned char *encoded;
-            size_t count;
-            size_t keystoneSize;
-            KeystoneUtils::getInstance().assemble(content.c_str(), &encoded, keystoneSize, count);
-            assert(keystoneSize == fSize);
-
-            for (int i = 0; i < keystoneSize; i++) {
-                bytes.push_back(encoded[i]);
-            }
-            free(encoded);
-        }
-        Symbol newFSymbol = originalSymbol;
-        newFSymbol.value = functionAddress;
-        newFSymbol.size = fSize;
-
-        data.symbolsWithLocations.push_back(newFSymbol);
-    }
+    void addConvertedFunctionData(const ElfStructures::Symbol &originalSymbol, const ConvertedFunctionData &fData);
 
     void addNonFunctionChunk(size_t size, address_t originalChunkAddress, unsigned char const *chunkBytes,
-                             const std::vector<Symbol> &relatedSymbols,
-                             const std::vector<Relocation> &relatedRelocations) {
+                             const std::vector<ElfStructures::Symbol> &relatedSymbols,
+                             const std::vector<ElfStructures::Relocation> &relatedRelocations);
 
-        address_t newChunkAddress = sectionSize();
-        Elf_Sxword diff = (Elf_Sxword) newChunkAddress - (Elf_Sxword) originalChunkAddress;
-        for (const auto &s: relatedSymbols) {
-            Symbol newS = s;
-            assert(newS.type == STT_NOTYPE || newS.type == STT_OBJECT);
-            newS.value += diff;
-            data.symbolsWithLocations.push_back(newS);
-        }
-        for (const auto &rel: relatedRelocations) {
-            Relocation newRel = rel;
-            newRel.offset += diff;
-            assert(rel.type == R_X86_64_64);
-            newRel.type = R_AARCH64_ABS64;
-            data.relocations.push_back(newRel);
-        }
-        for (size_t i = 0; i < size; i++) {
-            bytes.push_back(chunkBytes[i]);
-        }
-    }
-
-    void setSectionSymbol(const Symbol &s) {
+    void setSectionSymbol(const ElfStructures::Symbol &s) {
         assert(s.isSection());
         data.sectionSymbol = s;
     }
 
-    SectionData setDataAndBuild() {
+    ElfStructures::SectionData setDataAndBuild() {
         data.s->set_data(reinterpret_cast<const char *>(bytes.data()), bytes.size());
         return data;
     }
 };
 
 class SectionManager {
-    SectionData originalSectionData;
+    ElfStructures::SectionData originalSectionData;
 
-    static std::vector<Relocation> getRelatedRelocations(const std::vector<Relocation> &relocations, const size_t chunkStart, size_t chunkEnd) {
-        std::vector<Relocation> relatedRelocations;
+    static std::vector<ElfStructures::Relocation> getRelatedRelocations(const std::vector<ElfStructures::Relocation> &relocations, const size_t chunkStart, size_t chunkEnd) {
+        std::vector<ElfStructures::Relocation> relatedRelocations;
         for (const auto &it: relocations) {
             if (it.offset >= chunkStart && it.offset <= chunkEnd) {
                 relatedRelocations.push_back(it);
@@ -147,7 +79,7 @@ public:
 
     SectionManager() = default;
 
-    void addSymbol(const Symbol &symbol) {
+    void addSymbol(const ElfStructures::Symbol &symbol) {
         if (symbol.isSection()) {
             originalSectionData.sectionSymbol = symbol;
         } else if (symbol.isSymbolWithLocation()) {
@@ -157,7 +89,7 @@ public:
         }
     }
 
-    void setRelocations(const std::vector<Relocation> &relocations, section *relocationSection) {
+    void setRelocations(const std::vector<ElfStructures::Relocation> &relocations, section *relocationSection) {
         originalSectionData.relocations = relocations;
         originalSectionData.relatedRelocationsection = relocationSection;
     }
@@ -169,63 +101,7 @@ public:
         return originalSectionData.s->get_name();
     }
 
-    SectionData convert(elfio &writer) {
-        section *newSection = writer.sections.add(originalSectionData.s->get_name());
-        SectionBuilder newSectionBuilder(newSection, originalSectionData.relatedRelocationsection);
-        newSectionBuilder.copyMetaData(originalSectionData.s);
-
-        if (originalSectionData.sectionSymbol.has_value()) {
-            newSectionBuilder.setSectionSymbol(originalSectionData.sectionSymbol.value());
-        }
-
-        std::sort(originalSectionData.symbolsWithLocations.begin(),
-                  originalSectionData.symbolsWithLocations.end(),
-                  [](const Symbol &s1, const Symbol &s2) -> bool {
-                      return s1.value < s2.value;
-                  });
-        std::sort(originalSectionData.relocations.begin(),
-                  originalSectionData.relocations.end(),
-                  [](Relocation r1, Relocation r2) -> bool {
-                      return r1.offset < r2.offset;
-                  });
-        auto symbolsIt = originalSectionData.symbolsWithLocations.cbegin();
-
-
-        size_t chunkStart = 0;
-        bool end = false;
-        while (!end) {
-            std::vector<Symbol> chunkSymbols;
-            size_t chunkEnd;
-            std::optional<Symbol> function;
-            while (symbolsIt != originalSectionData.symbolsWithLocations.end() && !symbolsIt->isFunction()) {
-                chunkSymbols.push_back(*symbolsIt);
-                symbolsIt++;
-            }
-            if (symbolsIt != originalSectionData.symbolsWithLocations.end()) {
-                function = *symbolsIt;
-                chunkEnd = symbolsIt->value;
-            } else {
-                end = true;
-                chunkEnd = originalSectionData.s->get_size();
-            }
-
-            size_t chunkSize = chunkEnd - chunkStart;
-            newSectionBuilder.addNonFunctionChunk(chunkSize,
-                                                  chunkStart,
-                                                  reinterpret_cast<const unsigned char *>(&originalSectionData.s->get_data()[chunkStart]),
-                                                  chunkSymbols,
-                                                  getRelatedRelocations(originalSectionData.relocations, chunkStart, chunkEnd));
-
-            if (function.has_value()) {
-                address_t functionEndAddress = function->value + function->size;
-                chunkStart = functionEndAddress;
-                const FunctionData fData(&originalSectionData.s->get_data()[function->value], function->size, function->value);
-                newSectionBuilder.addConvertedFunctionData(function.value(),
-                                                           FunctionConverter::convert(getRelatedRelocations(originalSectionData.relocations, function->value, functionEndAddress), fData));
-            }
-        }
-        return newSectionBuilder.setDataAndBuild();
-    }
+    ElfStructures::SectionData convert(elfio &writer);
 
     section *getOriginalSection() const {
         return originalSectionData.s;
@@ -249,7 +125,7 @@ public:
         return writer;
     }
 
-    void addSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMappng, const Symbol &s, symbol_section_accessor &syma, string_section_accessor &stra) {
+    void addSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMappng, const ElfStructures::Symbol &s, symbol_section_accessor &syma, string_section_accessor &stra) {
         Elf_Word newIndex = syma.add_symbol(stra, s.name.c_str(), s.value, s.size, s.bind, s.type, s.other, s.sectionIndex);
         mDebug << "Adding symbol: [" << newIndex << "] " << s << std::endl;
         tableIndexMappng[s.tableIndex] = newIndex;
@@ -259,58 +135,7 @@ public:
         }
     }
 
-    void buildElfFile(const std::vector<SectionData> &sectionDatas, const std::vector<Symbol> &globalSymbols, const section *originalSymbolSection) {
-        // Create string table section
-        section *str_sec = writer.sections.add(".strtab");
-        str_sec->set_type(SHT_STRTAB);
-        std::map<Elf_Word, Elf_Word> tableIndexMapping;
-
-        section *sym_sec = writer.sections.add(".symtab");
-        sym_sec->set_type(SHT_SYMTAB);
-        sym_sec->set_addr_align(originalSymbolSection->get_addr_align());
-        sym_sec->set_entry_size(writer.get_default_entry_size(SHT_SYMTAB));
-        sym_sec->set_link(str_sec->get_index());
-
-        // Create string table writer
-        string_section_accessor stra(str_sec);
-        // Create symbol table writer
-        symbol_section_accessor syma(writer, sym_sec);
-
-        // Add global symbols
-        for (const auto &s: globalSymbols) {
-            addSymbol(tableIndexMapping, s, syma, stra);
-        }
-        for (const auto &s: sectionDatas) {
-            mDebug << "Adding symbols declared in section " << s.s->get_name() << std::endl;
-            if (s.sectionSymbol.has_value()) {
-                addSymbol(tableIndexMapping, s.sectionSymbol.value(), syma, stra);
-            }
-            for (const auto &s_it: s.symbolsWithLocations) {
-                addSymbol(tableIndexMapping, s_it, syma, stra);
-            }
-        }
-
-        for (const auto &s: sectionDatas) {
-            if (s.relatedRelocationsection.has_value()) {
-                mDebug << "Section " << s.s->get_name() << " has relocations! Will be adding those relocations to the file" << std::endl;
-                section *newRelocationSection = writer.sections.add(s.relatedRelocationsection.value()->get_name());
-
-                newRelocationSection->set_type(s.relatedRelocationsection.value()->get_type());
-                newRelocationSection->set_addr_align(s.relatedRelocationsection.value()->get_addr_align());
-                newRelocationSection->set_entry_size(writer.get_default_entry_size(SHT_RELA));
-                newRelocationSection->set_link(sym_sec->get_index());
-                newRelocationSection->set_info(s.s->get_index());
-                // Create relocation table writer
-                relocation_section_accessor rela(writer, newRelocationSection);
-
-                for (auto &r: s.relocations) {
-                    rela.add_entry(r.offset, tableIndexMapping[r.symbol], r.type, r.addend);
-                }
-            }
-        }
-
-        sym_sec->set_info(maxIndex);
-    }
+    void buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas, const std::vector<ElfStructures::Symbol> &globalSymbols, const section *originalSymbolSection);
 
     void save(const std::string &name) {
         writer.save(name);
@@ -323,7 +148,7 @@ class ConvertManager {
     std::map<Elf_Half, SectionManager> sectionManagers;
 
     // File symbol and external symbols
-    std::vector<Symbol> globalSymbols;
+    std::vector<ElfStructures::Symbol> globalSymbols;
     std::optional<size_t> symbolSectionIndex;
 
 
@@ -365,7 +190,7 @@ class ConvertManager {
 
         mDebug << "Parsing symbol section" << std::endl;
         for (unsigned int j = 0; j < symbols.get_symbols_num(); ++j) {
-            Symbol s;
+            ElfStructures::Symbol s;
             s.tableIndex = j;
             if (!symbols.get_symbol(j, s.name, s.value, s.size, s.bind, s.type,
                                     s.sectionIndex, s.other)) {
@@ -375,7 +200,7 @@ class ConvertManager {
             if (s.isGlobal()) {
                 mWarn << "symbol is global, will not do anything" << std::endl;
                 globalSymbols.push_back(s);
-            } else if (Symbol::isSpecialUnhandled(s.sectionIndex)) {
+            } else if (ElfStructures::Symbol::isSpecialUnhandled(s.sectionIndex)) {
                 mWarn << "symbols from section " << s.sectionIndex << "are not handled "
                       << std::endl;
             } else {
@@ -404,14 +229,14 @@ class ConvertManager {
 
         const relocation_section_accessor relocationSectionAccessor(
                 fileToConvert, relocationSection);
-        std::vector<Relocation> relocations;
+        std::vector<ElfStructures::Relocation> relocations;
         for (int i = 0; i < relocationSectionAccessor.get_entries_num(); i++) {
-            Relocation r;
+            ElfStructures::Relocation r;
             if (!relocationSectionAccessor.get_entry(i, r.offset, r.symbol, r.type,
                                                      r.addend)) {
                 zerror("Error getting relocation entry");
             }
-            if (!Relocation::isRelocationHandled(r.type)) {
+            if (!ElfStructures::Relocation::isRelocationHandled(r.type)) {
                 mDebug << "relocation of this type is not handled" << std::endl;
             }
             relocations.push_back(r);
@@ -455,14 +280,11 @@ public:
         if (!fileToConvert.load(path)) {
             zerror("Couldn't find or process file");
         }
-        if (!FileChecker::checkFile(fileToConvert)) {
-            zerror("Error during checks on file");
-        }
         parseSections();
     }
     void convert(const std::string &outputFile) {
         ConvertedFileBuilder builder;
-        std::vector<SectionData> convertedSections;
+        std::vector<ElfStructures::SectionData> convertedSections;
         // todo jeśli na qemu będą dodawane symbole każdej sekcji (w tym sekcji relokacji oraz symboli)
         // to będzie trzeba te symbole rówbnież przekaząźć builderowi
         for (auto &it: sectionManagers) {

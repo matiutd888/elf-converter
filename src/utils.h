@@ -2,15 +2,17 @@
 // Created by mateusz on 11.03.23.
 //
 
-#include <capstone/capstone.h>
-#include <iostream>
 
 #ifndef LA1_UTILS_H
 #define LA1_UTILS_H
 
-#endif//LA1_UTILS_H
 
-using word_t = char;
+#include <capstone/capstone.h>
+#include <iostream>
+
+#define mDebug (std::cout << "DEBUG: ")
+#define mWarn (std::cout << "WARN: ")
+#define todo(S) zerror("TODO: " S)
 
 #define zerror(I, ...)                 \
     fprintf(stderr, I, ##__VA_ARGS__); \
@@ -20,17 +22,6 @@ using word_t = char;
 #include <memory>
 #include <stdexcept>
 #include <string>
-
-//https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
-template<typename... Args>
-std::string string_format(const std::string &format, Args... args) {
-    int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;// Extra space for '\0'
-    if (size_s <= 0) { throw std::runtime_error("Error during formatting."); }
-    auto size = static_cast<size_t>(size_s);
-    std::unique_ptr<char[]> buf(new char[size]);
-    std::snprintf(buf.get(), size, format.c_str(), args...);
-    return std::string(buf.get(), buf.get() + size - 1);// We don't want the '\0' inside
-}
 
 class CapstoneUtils {
     csh handle;
@@ -108,3 +99,5 @@ public:
     KeystoneUtils(KeystoneUtils const &) = delete;
     void operator=(KeystoneUtils const &) = delete;
 };
+
+#endif//LA1_UTILS_H
