@@ -57,6 +57,16 @@ public:
         address_t functionAddress = bytes.size();
         size_t fSize = fData.getFunctionSize();
         std::string content = fData.getContent();
+
+        mDebug << "---------------------------------" << std::endl;
+        mDebug << "Adding converted function data" << std::endl;
+        mDebug << std::endl;
+        mDebug << "function content: " << std::endl;
+        mDebug << content << std::endl;
+        mDebug << "End of function content" << std::endl;
+        mDebug << "-----------------------------" << std::endl;
+
+
         for (const auto &it: fData.getRelocations()) {
             MAddress addr = it.maddress;
             addr.setRelativeToSection(addr.getRelativeToFunction() + functionAddress);

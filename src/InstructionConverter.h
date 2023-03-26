@@ -31,12 +31,6 @@ struct ArmInstructionStub {
 public:
     std::string content;
     size_t sizeBytes;
-    // !IMPORTANT Will have offsets relative to instruction (STUB!) address, not
-    // function address!
-    // TODO this should probably be renamed to just relocations, as I will not
-    // analyze for changes relative to original relocation that much. But this is
-    // just an idea.
-    //    std::vector<RelocationWithMAddress> relocations;
 
     ArmInstructionStub(const std::string &content, size_t size)
         : content(content), sizeBytes(size) {
@@ -414,8 +408,6 @@ namespace InstructionConverter {
                                     ArmInstructionStub(instr, assemblyUtils::ARM_INSTRUCTION_SIZE_BYTES),
                                     {r});
                         } else {
-                            //                            TODO tego elsa można nie zrobić i wtedy po
-                            //                            prostu wpadniemy w case reg
                             break;
                         }
                     case x86_op_type::X86_OP_REG:
