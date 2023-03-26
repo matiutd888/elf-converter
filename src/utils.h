@@ -27,7 +27,6 @@ class CapstoneUtils {
     csh handle;
     uint64_t DEFAULT_START_ADDRESS = 0;
 
-
     explicit CapstoneUtils(cs_mode mode = CS_MODE_64) {
         if (cs_open(CS_ARCH_X86, mode, &handle) != CS_ERR_OK) {
             std::cerr << "Error creating cs handle" << std::endl;
@@ -78,23 +77,14 @@ class KeystoneUtils {
             zerror("ERROR: failed on ks_open(), quit\n");
         }
     }
+
 public:
-    static KeystoneUtils &getInstance() {
-        static KeystoneUtils k;
-        return k;
-    }
+    static KeystoneUtils &getInstance();
 
     void assemble(const char *code, unsigned char **encode,
-                  size_t &size, size_t &count) {
-        if (ks_asm(ks, code, 0, encode, &size, &count) != KS_ERR_OK) {
-            zerror("ERROR: ks_asm() failed & count = %lu, error = %u\n", count, ks_errno(ks));
-        }
-    }
+                  size_t &size, size_t &count);
 
-    ~KeystoneUtils() {
-        // close Keystone instance when done
-        ks_close(ks);
-    }
+    ~KeystoneUtils();
 
     KeystoneUtils(KeystoneUtils const &) = delete;
     void operator=(KeystoneUtils const &) = delete;

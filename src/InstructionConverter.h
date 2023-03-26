@@ -2,18 +2,19 @@
 // Created by mateusz on 26.03.23.
 //
 
-
-using address_t = ELFIO::Elf64_Addr;
-
 #ifndef CONVERTERPROJECT_INSTRUCTIONCONVERTER_H
 #define CONVERTERPROJECT_INSTRUCTIONCONVERTER_H
 
 #include "AssemblyUtils.h"
-#include "ConvertManager.h"
+#include "ElfStructures.h"
 #include <algorithm>
 #include <cassert>
+#include <elfio/elfio.hpp>
+#include <optional>
 #include <string>
 #include <variant>
+
+using address_t = ELFIO::Elf64_Addr;
 
 #define strEqual(I, J) (strcmp((I), (J)) == 0)
 
@@ -644,28 +645,7 @@ namespace InstructionConverter {
     HandleInstrResult
     handleInstruction(
             cs_insn *ins,
-            const std::vector<RelocationWithMAddress> &relatedRelocations) {
-        JmpHandler jmpHandler;
-
-        if (strEqual(ins->mnemonic, "add")) {
-            return HandleInstrResult(
-                    ArithmeticInstructionHandler().handleAdd(ins, relatedRelocations));
-        } else if (strEqual(ins->mnemonic, "sub")) {
-            return HandleInstrResult(
-                    ArithmeticInstructionHandler().handleSub(ins, relatedRelocations));
-        } else if (strEqual(ins->mnemonic, "cmp")) {
-            return HandleInstrResult(CmpHandler().handleCmp(ins, relatedRelocations));
-        } else if (strEqual(ins->mnemonic, "call")) {
-            return HandleInstrResult(CallHandler().handleCall(ins, relatedRelocations));
-        } else if (strEqual(ins->mnemonic, "mov")) {
-            return HandleInstrResult(MovHandler().handleMov(ins, relatedRelocations));
-        } else if (strEqual(ins->mnemonic, "jmp")) {
-            return HandleInstrResult(jmpHandler.handleJmp(ins, relatedRelocations));
-        } else if (jmpHandler.isConditionalJump(ins->mnemonic)) {
-            return HandleInstrResult(
-                    jmpHandler.handleConditionalJmp(ins, relatedRelocations));
-        }
-    }// namespace InstructionConverter
+            const std::vector<RelocationWithMAddress> &relatedRelocations);// namespace InstructionConverter
 }// namespace InstructionConverter
 
 struct JumpInstruction {

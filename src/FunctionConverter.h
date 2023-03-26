@@ -2,8 +2,7 @@
 // Created by mateusz on 26.03.23.
 //
 
-class ConvertedFunctionData;
-class FunctionConverter;
+
 
 #ifndef CONVERTERPROJECT_FUNCTIONCONVERTER_H
 #define CONVERTERPROJECT_FUNCTIONCONVERTER_H
@@ -14,6 +13,9 @@ class FunctionConverter;
 #include <optional>
 #include <queue>
 
+
+class ConvertedFunctionData;
+class FunctionConverter;
 
 class ConvertedFunctionData {
     friend FunctionConverter;

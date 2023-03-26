@@ -66,12 +66,12 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
     std::sort(originalSectionData.symbolsWithLocations.begin(),
               originalSectionData.symbolsWithLocations.end(),
               [](const ElfStructures::Symbol &s1, const ElfStructures::Symbol &s2) -> bool {
-                return s1.value < s2.value;
+                  return s1.value < s2.value;
               });
     std::sort(originalSectionData.relocations.begin(),
               originalSectionData.relocations.end(),
               [](ElfStructures::Relocation r1, ElfStructures::Relocation r2) -> bool {
-                return r1.offset < r2.offset;
+                  return r1.offset < r2.offset;
               });
     auto symbolsIt = originalSectionData.symbolsWithLocations.cbegin();
 
