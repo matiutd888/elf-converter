@@ -19,7 +19,7 @@ using namespace ELFIO;
 
 #define mDebug (std::cout << "DEBUG: ")
 #define mWarn (std::cout << "WARN: ")
-#define todo(S) (zerror("TODO: " S))
+#define todo(S) zerror("TODO: " S)
 #define strEqual(I, J) (strcmp((I), (J)) == 0)
 
 using address_t = Elf64_Addr;
@@ -36,6 +36,7 @@ private:
     static constexpr Elf_Word specialUnhandledSections[1] = {SHN_COMMON};
 
 public:
+    size_t index;
     std::string name;
     // Address in section
     //    In relocatable files, st_value holds alignment constraints for a symbol
@@ -121,6 +122,10 @@ public:
     address_t getRelativeToInstruction() const {
         return relativeToInstruction.value();
     }
+
+    address_t getRelativeToSection() const {
+        return relativeToSection.value();
+    }
 };
 
 class RelocationWithMAddress {
@@ -141,6 +146,7 @@ public:
 using reg_t = std::string;
 
 namespace assemblyUtils {
+
     const int ARM_INSTRUCTION_SIZE_BYTES = 32;
 
     namespace {
@@ -236,13 +242,8 @@ namespace assemblyUtils {
         return memPrefix[Aarch64][s] + tmp[tmpkind];
     }
 
-    std::string x86RegToString(x86_reg reg) {
-        todo("implement");
-        return "";
-    }
-
     std::string armReg(x86_reg reg) {
-        return assemblyUtils::x86ToArm(x86RegToString(reg));
+        return assemblyUtils::x86ToArm(CapstoneUtils::getInstance().getRegName(reg));
     }
 
     std::string armImmidiate(int64_t value) { return "#" + std::to_string(value); }
@@ -259,7 +260,7 @@ namespace assemblyUtils {
         } else if (op.type == x86_op_type::X86_OP_IMM) {
             return armImmidiate(op.imm);
         } else {
-            todo("Unable to convert mem");
+            zerror("Unexpected convert mem");
         }
     }
 }// namespace assemblyUtils
@@ -631,8 +632,7 @@ namespace InstructionConverter {
                                     InstructionBuilder("adr",
                                                        assemblyUtils::convertRegisterMemSize(
                                                                assemblyUtils::X86_64, assemblyUtils::MEM64,
-                                                               assemblyUtils::x86RegToString(
-                                                                       ins->detail->x86.operands[0].reg)),
+                                                               CapstoneUtils::getInstance().getRegName(ins->detail->x86.operands[0].reg)),
                                                        assemblyUtils::armImmidiate(0))
                                             .build();
                             return createArmStubWithRels(
@@ -766,8 +766,8 @@ namespace InstructionConverter {
                 case x86_op_type::X86_OP_MEM:
                     return handleMovMem(ins, relatedRelocations);
                 default:
-                    zerror(&"mov: Incorrect first operand type: "[ins->detail->x86.operands[0]
-                                                                          .type]);
+                    zerror("mov: Incorrect first operand type: %d", ins->detail->x86.operands[0]
+                                                                            .type);
             }
         }
     }// namespace movHandler
@@ -930,7 +930,7 @@ namespace InstructionConverter {
             return HandleInstrResult(
                     jmpHandler::handleConditionalJmp(ins, relatedRelocations));
         }
-    };// namespace InstructionConverter
+    }// namespace InstructionConverter
 }// namespace InstructionConverter
 
 struct JumpInstruction {
@@ -950,8 +950,7 @@ class ConvertedFunctionData {
     std::vector<JumpInstruction> jumps;
     std::vector<RelocationWithMAddress> armRels;
 
-public:
-    address_t getNewInstructionAddress() {
+    address_t getNewInstructionAddress() const {
         if (armInstructions.empty()) {
             return 0;
         } else {
@@ -963,13 +962,28 @@ public:
     void addArmInstruction(const ArmInstructionStub &a) {
         armInstructions.emplace_back(a, getNewInstructionAddress());
     }
+
+public:
+    std::string getContent() const {
+        std::string content;
+        for (const auto &it: armInstructions) {
+            content += it.first.content + "\n";
+        }
+        return content;
+    }
+    size_t getFunctionSize() const {
+        return getNewInstructionAddress();
+    }
+
+    const std::vector<RelocationWithMAddress> &getRelocations() const {
+        return armRels;
+    }
 };
 
 class FunctionData {
     friend FunctionConverter;
     const address_t baseAddress;
 
-    CapstoneUtils utils;
     cs_insn *insn;
     unsigned long numberOfInstructions;
 
@@ -991,13 +1005,13 @@ class FunctionData {
 public:
     FunctionData(const char *rawData, size_t size, address_t baseAddress)
         : insn(nullptr), baseAddress(baseAddress),
-          numberOfInstructions(utils.disassemble(
+          numberOfInstructions(CapstoneUtils::getInstance().disassemble(
                   reinterpret_cast<const uint8_t *>(rawData), size, &insn)) {}
 
     // This probably will not be neccessaru
     //  address_t getNewAddress(address_t oldAddress) {
     //    if (!converted) {
-    //      zerror("Function hasn't been converted yet");
+    //      zerror("Function hasn't been converted yet");;
     //    }
     //  }
 };
@@ -1142,16 +1156,87 @@ struct SectionData {
     std::vector<Relocation> relocations;
 };
 
+class SectionBuilder {
+    SectionData data;
+    std::vector<unsigned char> bytes;
+
+public:
+    size_t sectionSize() const {
+        return bytes.size();
+    }
+
+    explicit SectionBuilder(section *newSection) {
+        data.s = newSection;
+    }
+
+    void addConvertedFunctionData(const Symbol &originalSymbol, const ConvertedFunctionData &fData) {
+        address_t functionAddress = bytes.size();
+        size_t fSize = fData.getFunctionSize();
+        std::string content = fData.getContent();
+        for (const auto &it: fData.getRelocations()) {
+            MAddress addr = it.maddress;
+            addr.setRelativeToSection(addr.getRelativeToFunction() + functionAddress);
+            data.relocations.emplace_back(addr.getRelativeToSection(), it.symbol(), it.type(), it.addend());
+        }
+
+        {
+            unsigned char *encoded;
+            size_t count;
+            size_t keystoneSize;
+            KeystoneUtils::getInstance().assemble(content.c_str(), &encoded, keystoneSize, count);
+            assert(keystoneSize == fSize);
+
+            for (int i = 0; i < keystoneSize; i++) {
+                bytes.push_back(encoded[i]);
+            }
+            free(encoded);
+        }
+        Symbol newFSymbol = originalSymbol;
+        newFSymbol.value = functionAddress;
+        newFSymbol.size = fSize;
+
+        data.symbols.push_back(newFSymbol);
+    }
+
+    void addNonFunctionChunk(size_t size, address_t originalChunkAddress, unsigned char const *chunkBytes,
+                             const std::vector<Symbol> &relatedSymbols,
+                             const std::vector<Relocation> &relatedRelocations) {
+        address_t newChunkAddress = sectionSize();
+        Elf_Sxword diff = (Elf_Sxword) newChunkAddress - (Elf_Sxword) originalChunkAddress;
+        for (const auto &s: relatedSymbols) {
+            Symbol newS = s;
+            newS.value += diff;
+            data.symbols.push_back(newS);
+        }
+        for (const auto &rel: relatedRelocations) {
+            Relocation newRel = rel;
+            newRel.offset += diff;
+            assert(rel.type == R_X86_64_64);
+            newRel.type = R_AARCH64_ABS64;
+            data.relocations.push_back(newRel);
+        }
+        for (size_t i = 0; i < size; i++) {
+            bytes.push_back(chunkBytes[i]);
+        }
+    }
+
+    void setSectionSymbol(const Symbol &s) {
+        data.symbols.push_back(s);
+    }
+
+    SectionData build() {
+    }
+};
+
 class SectionManager {
     SectionData originalSectionData;
-    SectionData newSectionData;
+    SectionBuilder newSectionBuilder;
     std::vector<FunctionData> functions;
     std::vector<ConvertedFunctionData> convertedFunctionData;
 
 public:
-    explicit SectionManager(section *originalSection, section *newSection) {
+    explicit SectionManager(section *originalSection, section *newSection) : newSectionBuilder(newSection) {
         originalSectionData.s = originalSection;
-        newSectionData.s = newSection;
     }
 
     SectionManager() = default;
@@ -1199,6 +1284,10 @@ public:
                       return r1.offset < r2.offset;
                   });
 
+
+        todo("pętla mająca dwa fragmenty - wczytaj funkcję i ją przetwórz, "
+             "wczytaj teren pomiędzy funkcjami i go przetwórz wraz z symbolami i relokacjami między funkcjami");
+
         for (const auto &symbol: originalSectionData.symbols) {
             if (symbol.type == STT_FUNC) {
                 std::vector<Relocation> relatedRelocations;
@@ -1215,8 +1304,6 @@ class SymbolSectionManager {
 
 public:
     explicit SymbolSectionManager(const SectionManager &s) : s(s){};
-
-    SymbolSectionManager() = default;
 };
 
 class ConvertManager {
@@ -1227,7 +1314,7 @@ class ConvertManager {
 
     // File symbol and external symbols
     std::vector<Symbol> globalSymbols;
-    SymbolSectionManager symbolSectionManager;
+    std::optional<SymbolSectionManager> symbolSectionManager;
 
     // https://stackoverflow.com/questions/874134/find-out-if-string-ends-with-another-string-in-c
     inline static bool ends_with(std::string const &value,
@@ -1265,6 +1352,7 @@ class ConvertManager {
         mDebug << "Parsing symbol section" << std::endl;
         for (unsigned int j = 0; j < symbols.get_symbols_num(); ++j) {
             Symbol s;
+            s.index = j;
             Elf_Half sectionIndex;
             if (!symbols.get_symbol(j, s.name, s.value, s.size, s.bind, s.type,
                                     sectionIndex, s.other)) {
@@ -1310,8 +1398,8 @@ class ConvertManager {
             }
             relocations.push_back(r);
         }
-
-        sectionManagers[index].setRelocations(relocations);
+        assert(sectionManagers.find(index) != sectionManagers.end());
+        sectionManagers.find(index)->second.setRelocations(relocations);
     }
 
     void parseSections() {
@@ -1335,8 +1423,7 @@ class ConvertManager {
                 relocationSectionsToParse.push_back(psec);
             } else if (!isSkippable(psec->get_name())) {
                 // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
-                sectionManagers[i] =
-                        SectionManager(psec, writer.sections.add(psec->get_name()));
+                sectionManagers.insert({i, SectionManager(psec, writer.sections.add(psec->get_name()))});
             }
         }
         addSymbolsToSectionManager(symbolSection);
