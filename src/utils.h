@@ -104,4 +104,7 @@ public:
         // close Keystone instance when done
         ks_close(ks);
     }
+
+    KeystoneUtils(KeystoneUtils const &) = delete;
+    void operator=(KeystoneUtils const &) = delete;
 };
