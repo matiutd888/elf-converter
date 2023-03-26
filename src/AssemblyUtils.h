@@ -49,7 +49,7 @@ public:
         }
     }
 
-    static inline reg_t getTmpRegByMemOpSize(TmpKind tmpkind, MemSize s);
+    static reg_t getTmpRegByMemOpSize(TmpKind tmpkind, MemSize s);
 
     static inline std::string armReg(x86_reg reg) {
         return AssemblyUtils::x86ToArm(CapstoneUtils::getInstance().getRegName(reg));
