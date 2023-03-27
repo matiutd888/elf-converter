@@ -2,7 +2,9 @@
 #include "ConvertManager.h"
 
 
-void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas, const std::vector<ElfStructures::Symbol> &externalSymbols, const section *originalSymbolSection) {
+void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas,
+                                        const std::vector<ElfStructures::Symbol> &externalSymbols,
+                                        const section *originalSymbolSection) {
     // Create string table section
     section *str_sec = writer.sections.add(".strtab");
     str_sec->set_type(SHT_STRTAB);
@@ -22,7 +24,7 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
     std::vector<ElfStructures::Symbol> symbolsToAdd;
 
     // Add global symbols
-    mDebug << "start add global symbols" << std::endl;
+    mDebug << "start add external symbols" << std::endl;
     for (size_t i = 1; i < externalSymbols.size(); i++) {
         symbolsToAdd.push_back(externalSymbols[i]);
     }
@@ -38,12 +40,12 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
         }
     }
 
-    for (const auto &s : symbolsToAdd) {
+    for (const auto &s: symbolsToAdd) {
         if (s.bind == STB_LOCAL) {
             addSymbol(tableIndexMapping, s, syma, stra);
         }
     }
-    for (const auto &s : symbolsToAdd) {
+    for (const auto &s: symbolsToAdd) {
         if (s.bind != STB_LOCAL) {
             addSymbol(tableIndexMapping, s, syma, stra);
         }
@@ -51,7 +53,8 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
 
     for (const auto &s: sectionDatas) {
         if (s.relatedRelocationsection.has_value()) {
-            mDebug << "Section " << s.s->get_name() << " has relocations! Will be adding those relocations to the file" << std::endl;
+            mDebug << "Section " << s.s->get_name() << " has relocations! Will be adding those relocations to the file"
+                   << std::endl;
             section *newRelocationSection = writer.sections.add(s.relatedRelocationsection.value()->get_name());
 
             newRelocationSection->set_type(s.relatedRelocationsection.value()->get_type());
@@ -70,6 +73,7 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
 
     sym_sec->set_info(maxLocalIndex);
 }
+
 ElfStructures::SectionData SectionManager::convert(elfio &writer) {
     section *newSection = writer.sections.add(originalSectionData.s->get_name());
     SectionBuilder newSectionBuilder(newSection, originalSectionData.relatedRelocationsection);
@@ -111,25 +115,44 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
             chunkEnd = originalSectionData.s->get_size();
         }
 
+        mDebug << "original section data size: " << originalSectionData.s->get_size() << std::endl;
+        mDebug << "will try to read indexes (" << chunkStart << ", " << chunkEnd << ")" << std::endl;
+
 
         size_t chunkSize = chunkEnd - chunkStart;
+        unsigned char const *chunkBytes;
+        if (originalSectionData.s->get_type() == SHT_NOBITS) {
+            chunkBytes = nullptr;
+        } else {
+            chunkBytes = reinterpret_cast<const unsigned char *>(&originalSectionData.s->get_data()[chunkStart]);
+        }
         newSectionBuilder.addNonFunctionChunk(chunkSize,
                                               chunkStart,
-                                              reinterpret_cast<const unsigned char *>(&originalSectionData.s->get_data()[chunkStart]),
+                                              chunkBytes,
                                               chunkSymbols,
-                                              getRelatedRelocations(originalSectionData.relocations, chunkStart, chunkEnd));
+                                              getRelatedRelocations(originalSectionData.relocations, chunkStart,
+                                                                    chunkEnd));
 
         if (function.has_value()) {
             address_t functionEndAddress = function->value + function->size;
             chunkStart = functionEndAddress;
-            const FunctionData fData(&originalSectionData.s->get_data()[function->value], function->size, function->value);
+            const FunctionData fData(&originalSectionData.s->get_data()[function->value], function->size,
+                                     function->value);
             newSectionBuilder.addConvertedFunctionData(function.value(),
-                                                       FunctionConverter::convert(getRelatedRelocations(originalSectionData.relocations, function->value, functionEndAddress), fData));
+                                                       FunctionConverter::convert(
+                                                               getRelatedRelocations(originalSectionData.relocations,
+                                                                                     function->value,
+                                                                                     functionEndAddress), fData));
         }
     }
     return newSectionBuilder.setDataAndBuild();
 }
-void SectionBuilder::addNonFunctionChunk(size_t size, address_t originalChunkAddress, const unsigned char *chunkBytes, const std::vector<ElfStructures::Symbol> &relatedSymbols, const std::vector<ElfStructures::Relocation> &relatedRelocations) {
+
+void SectionBuilder::addNonFunctionChunk(size_t size,
+                                         address_t originalChunkAddress,
+                                         const unsigned char *chunkBytes,
+                                         const std::vector<ElfStructures::Symbol> &relatedSymbols,
+                                         const std::vector<ElfStructures::Relocation> &relatedRelocations) {
 
     address_t newChunkAddress = sectionSize();
     Elf_Sxword diff = (Elf_Sxword) newChunkAddress - (Elf_Sxword) originalChunkAddress;
@@ -150,12 +173,17 @@ void SectionBuilder::addNonFunctionChunk(size_t size, address_t originalChunkAdd
         newRel.type = R_AARCH64_ABS64;
         data.relocations.push_back(newRel);
     }
-    for (size_t i = 0; i < size; i++) {
-        bytes.push_back(chunkBytes[i]);
+    sSize += size;
+    if (chunkBytes != nullptr) {
+        for (size_t i = 0; i < size; i++) {
+            bytes.push_back(chunkBytes[i]);
+        }
     }
 }
-void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &originalSymbol, const ConvertedFunctionData &fData) {
-    address_t functionAddress = bytes.size();
+
+void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &originalSymbol,
+                                              const ConvertedFunctionData &fData) {
+    address_t functionAddress = sectionSize();
     size_t fSize = fData.getFunctionSize();
     std::string content = fData.getContent();
 
@@ -182,6 +210,7 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
         mDebug << "fSize: " << fSize << std::endl;
         assert(keystoneSize == fSize);
 
+        sSize += keystoneSize;
         for (int i = 0; i < keystoneSize; i++) {
             bytes.push_back(encoded[i]);
         }

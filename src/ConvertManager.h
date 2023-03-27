@@ -24,7 +24,7 @@ using namespace ELFIO;
 class SectionBuilder {
     ElfStructures::SectionData data;
     std::vector<unsigned char> bytes;
-
+    size_t sSize;
 public:
     void copyMetaData(section *originalSection) const {
         data.s->set_type(originalSection->get_type());
@@ -34,12 +34,13 @@ public:
     }
 
     size_t sectionSize() const {
-        return bytes.size();
+        return sSize;
     }
 
     explicit SectionBuilder(section *newSection, std::optional<section *> relatedRelocationSection) {
         data.s = newSection;
         data.relatedRelocationsection = relatedRelocationSection;
+        sSize = 0;
     }
 
     void addConvertedFunctionData(const ElfStructures::Symbol &originalSymbol, const ConvertedFunctionData &fData);
@@ -56,7 +57,11 @@ public:
     }
 
     ElfStructures::SectionData setDataAndBuild() {
-        data.s->set_data(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+        if (data.s->get_type() == SHT_NOBITS) {
+            data.s->set_data(nullptr, sectionSize());
+        } else {
+            data.s->set_data(reinterpret_cast<const char *>(bytes.data()), sectionSize());
+        }
         return data;
     }
 };
@@ -287,8 +292,6 @@ class ConvertManager {
                 // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
                 continue;
             }
-
-
             // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
             // There can be only one SYMTAB table
             if (psec->get_type() == SHT_SYMTAB) {
