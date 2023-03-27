@@ -134,6 +134,7 @@ void SectionBuilder::addNonFunctionChunk(size_t size, address_t originalChunkAdd
     address_t newChunkAddress = sectionSize();
     Elf_Sxword diff = (Elf_Sxword) newChunkAddress - (Elf_Sxword) originalChunkAddress;
     for (const auto &s: relatedSymbols) {
+        mDebug << "adding non function symbol " << s << std::endl;
         ElfStructures::Symbol newS = s;
         assert(newS.type == STT_NOTYPE || newS.type == STT_OBJECT);
         newS.value += diff;
@@ -149,6 +150,9 @@ void SectionBuilder::addNonFunctionChunk(size_t size, address_t originalChunkAdd
         newRel.type = R_AARCH64_ABS64;
         data.relocations.push_back(newRel);
     }
+    for (size_t i = 0; i < size; i++) {
+        bytes.push_back(chunkBytes[i]);
+    }
 }
 void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &originalSymbol, const ConvertedFunctionData &fData) {
     address_t functionAddress = bytes.size();
@@ -162,7 +166,6 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
     mDebug << content << std::endl;
     mDebug << "End of function content" << std::endl;
     mDebug << "-----------------------------" << std::endl;
-
 
     for (const auto &it: fData.getRelocations()) {
         MAddress addr = it.maddress;
