@@ -13,7 +13,7 @@ test-%: %-aarch64.c %-x64-aarch64.o common.o
 	aarch64-linux-gnu-gcc $^ -no-pie -o $@
 
 %-x64.o: %-x64.c
-	x86_64-linux-gnu-gcc -fno-pic -mcmodel=small -fno-common -fno-stack-protector -mno-red-zone -c $<
+	x86_64-linux-gnu-gcc -fcf-protection=branch -fno-pic -mcmodel=small -fno-common -fno-stack-protector -mno-red-zone -c $<
 
 %-x64-aarch64.o: converter %-x64.o
 	./converter $(filter-out $<,$^) $@

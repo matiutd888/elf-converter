@@ -48,7 +48,7 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
             addSymbol(tableIndexMapping, s, syma, stra);
         }
     }
-    
+
     for (const auto &s: sectionDatas) {
         if (s.relatedRelocationsection.has_value()) {
             mDebug << "Section " << s.s->get_name() << " has relocations! Will be adding those relocations to the file" << std::endl;
@@ -104,12 +104,13 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
         }
         if (symbolsIt != originalSectionData.symbolsWithLocations.end()) {
             function = *symbolsIt;
-            symbolsIt++;
             chunkEnd = symbolsIt->value;
+            symbolsIt++;
         } else {
             end = true;
             chunkEnd = originalSectionData.s->get_size();
         }
+
 
         size_t chunkSize = chunkEnd - chunkStart;
         newSectionBuilder.addNonFunctionChunk(chunkSize,
@@ -142,12 +143,11 @@ void SectionBuilder::addNonFunctionChunk(size_t size, address_t originalChunkAdd
     for (const auto &rel: relatedRelocations) {
         ElfStructures::Relocation newRel = rel;
         newRel.offset += diff;
+
+        mDebug << rel << std::endl;
         assert(rel.type == R_X86_64_64);
         newRel.type = R_AARCH64_ABS64;
         data.relocations.push_back(newRel);
-    }
-    for (size_t i = 0; i < size; i++) {
-        bytes.push_back(chunkBytes[i]);
     }
 }
 void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &originalSymbol, const ConvertedFunctionData &fData) {

@@ -60,7 +60,7 @@ namespace ElfStructures {
         friend std::ostream &operator<<(std::ostream &os, const Symbol &symbol) {
             os << "name: " << symbol.name << " value: " << symbol.value
                << " size: " << symbol.size << " bind: " << int(symbol.bind)
-               << " type: " << int(symbol.type) << " other: " << int(symbol.other) << " sectionIndex: " << int(symbol.sectionIndex);
+               << " type: " << int(symbol.type) << " other: " << int(symbol.other) << " sectionIndex: " << int(symbol.sectionIndex) << " tableIndex: " << int(symbol.tableIndex);
             return os;
         }
     };

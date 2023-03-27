@@ -50,7 +50,8 @@ ConvertedFunctionData FunctionConverter::convert(std::vector<ElfStructures::Relo
             case HandleInstrResult::JUMP_INSTRUCTION_TO_FILL_TYPE: {
                 JumpInstructionToFill j = c.getJ();
                 size_t toIndex =
-                        f.findInstructionByAddressFromBase(j.jmpImm + getRip(&f.insn[i]));
+                        // TODO jumpy chyba nie są relatywne
+                        f.findInstructionByAddressFromBase(j.jmpImm);
                 JumpInstruction jumpInstruction{
                         .fromIndex = i,
                         .toIndex = toIndex,
@@ -58,7 +59,7 @@ ConvertedFunctionData FunctionConverter::convert(std::vector<ElfStructures::Relo
 
                 data.jumps.push_back(jumpInstruction);
 
-                data.addArmInstruction(ArmInstructionStub("", j.sizeBytes()));
+                data.addArmInstruction(ArmInstructionStub("soon-to-be-jump", j.sizeBytes()));
                 break;
             }
             case HandleInstrResult::ARM_INSTRUCTION_STUB_TYPE: {
