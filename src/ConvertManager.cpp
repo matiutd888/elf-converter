@@ -20,13 +20,21 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
     symbol_section_accessor syma(writer, sym_sec);
 
     // Add global symbols
-    for (const auto &s: globalSymbols) {
-        addSymbol(tableIndexMapping, s, syma, stra);
+    mDebug << "start add global symbols" << std::endl;
+    for (size_t i = 1; i < globalSymbols.size(); i++) {
+        addSymbol(tableIndexMapping, globalSymbols[i], syma, stra);
     }
     for (const auto &s: sectionDatas) {
-        mDebug << "Adding symbols declared in section " << s.s->get_name() << std::endl;
+        mDebug << "Adding symbols declared in section " << s.s->get_index() << " " << s.s->get_name() << std::endl;
         if (s.sectionSymbol.has_value()) {
-            addSymbol(tableIndexMapping, s.sectionSymbol.value(), syma, stra);
+
+            auto newIndex = syma.add_symbol(0, s.sectionSymbol->value, s.sectionSymbol->size, s.sectionSymbol->bind, s.sectionSymbol->type, s.sectionSymbol->other, s.sectionSymbol->sectionIndex);
+            mDebug << "Adding symbol: [" << newIndex << "] " << s.sectionSymbol->value << std::endl;
+            tableIndexMapping[s.sectionSymbol->tableIndex] = newIndex;
+
+            if (s.sectionSymbol->bind == STB_LOCAL) {
+                maxIndex = std::max(maxIndex, newIndex + 1);
+            }
         }
         for (const auto &s_it: s.symbolsWithLocations) {
             addSymbol(tableIndexMapping, s_it, syma, stra);
@@ -88,6 +96,7 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
         }
         if (symbolsIt != originalSectionData.symbolsWithLocations.end()) {
             function = *symbolsIt;
+            symbolsIt++;
             chunkEnd = symbolsIt->value;
         } else {
             end = true;
@@ -119,6 +128,7 @@ void SectionBuilder::addNonFunctionChunk(size_t size, address_t originalChunkAdd
         ElfStructures::Symbol newS = s;
         assert(newS.type == STT_NOTYPE || newS.type == STT_OBJECT);
         newS.value += diff;
+        newS.sectionIndex = data.s->get_index();
         data.symbolsWithLocations.push_back(newS);
     }
     for (const auto &rel: relatedRelocations) {
@@ -157,6 +167,8 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
         size_t count;
         size_t keystoneSize;
         KeystoneUtils::getInstance().assemble(content.c_str(), &encoded, keystoneSize, count);
+        mDebug << "keystoneSize: " << keystoneSize << std::endl;
+        mDebug << "fSize: " << fSize << std::endl;
         assert(keystoneSize == fSize);
 
         for (int i = 0; i < keystoneSize; i++) {
@@ -167,6 +179,6 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
     ElfStructures::Symbol newFSymbol = originalSymbol;
     newFSymbol.value = functionAddress;
     newFSymbol.size = fSize;
-
+    newFSymbol.sectionIndex = data.s->get_index();
     data.symbolsWithLocations.push_back(newFSymbol);
 }

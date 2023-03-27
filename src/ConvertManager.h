@@ -48,9 +48,11 @@ public:
                              const std::vector<ElfStructures::Symbol> &relatedSymbols,
                              const std::vector<ElfStructures::Relocation> &relatedRelocations);
 
-    void setSectionSymbol(const ElfStructures::Symbol &s) {
+    void setSectionSymbol(ElfStructures::Symbol s) {
         assert(s.isSection());
+        s.sectionIndex = data.s->get_index();
         data.sectionSymbol = s;
+        mDebug << "SECTION SYMBOL SET " << data.sectionSymbol.value() << std::endl;
     }
 
     ElfStructures::SectionData setDataAndBuild() {
@@ -62,7 +64,9 @@ public:
 class SectionManager {
     ElfStructures::SectionData originalSectionData;
 
-    static std::vector<ElfStructures::Relocation> getRelatedRelocations(const std::vector<ElfStructures::Relocation> &relocations, const size_t chunkStart, size_t chunkEnd) {
+    static std::vector<ElfStructures::Relocation>
+    getRelatedRelocations(const std::vector<ElfStructures::Relocation> &relocations, const size_t chunkStart,
+                          size_t chunkEnd) {
         std::vector<ElfStructures::Relocation> relatedRelocations;
         for (const auto &it: relocations) {
             if (it.offset >= chunkStart && it.offset <= chunkEnd) {
@@ -81,6 +85,7 @@ public:
 
     void addSymbol(const ElfStructures::Symbol &symbol) {
         if (symbol.isSection()) {
+            mWarn << symbol << std::endl;
             originalSectionData.sectionSymbol = symbol;
         } else if (symbol.isSymbolWithLocation()) {
             originalSectionData.symbolsWithLocations.push_back(symbol);
@@ -100,6 +105,11 @@ public:
         }
         return originalSectionData.s->get_name();
     }
+
+    const ElfStructures::SectionData &getOriginalSectionData() const {
+        return originalSectionData;
+    }
+
 
     ElfStructures::SectionData convert(elfio &writer);
 
@@ -125,8 +135,10 @@ public:
         return writer;
     }
 
-    void addSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMappng, const ElfStructures::Symbol &s, symbol_section_accessor &syma, string_section_accessor &stra) {
-        Elf_Word newIndex = syma.add_symbol(stra, s.name.c_str(), s.value, s.size, s.bind, s.type, s.other, s.sectionIndex);
+    void addSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMappng, const ElfStructures::Symbol &s,
+                   symbol_section_accessor &syma, string_section_accessor &stra) {
+        Elf_Word newIndex = syma.add_symbol(stra, s.name.c_str(), s.value, s.size, s.bind, s.type, s.other,
+                                            s.sectionIndex);
         mDebug << "Adding symbol: [" << newIndex << "] " << s << std::endl;
         tableIndexMappng[s.tableIndex] = newIndex;
 
@@ -135,7 +147,8 @@ public:
         }
     }
 
-    void buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas, const std::vector<ElfStructures::Symbol> &globalSymbols, const section *originalSymbolSection);
+    void buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas,
+                      const std::vector<ElfStructures::Symbol> &globalSymbols, const section *originalSymbolSection);
 
     void save(const std::string &name) {
         writer.save(name);
@@ -186,7 +199,11 @@ class ConvertManager {
         if (!symbolSectionIndex.has_value()) {
             zerror("Symbol section wan't parsed yet!");
         }
-        const symbol_section_accessor symbols(fileToConvert, sectionManagers.find(symbolSectionIndex.value())->second.getOriginalSection());
+        auto it = sectionManagers.find(symbolSectionIndex.value());
+        if (it == sectionManagers.end()) {
+            zerror("Unexpected error getting symbol section");
+        }
+        const symbol_section_accessor symbols(fileToConvert, it->second.getOriginalSection());
 
         mDebug << "Parsing symbol section" << std::endl;
         for (unsigned int j = 0; j < symbols.get_symbols_num(); ++j) {
@@ -204,9 +221,9 @@ class ConvertManager {
                 mWarn << "symbols from section " << s.sectionIndex << "are not handled "
                       << std::endl;
             } else {
-                auto it = sectionManagers.find(s.sectionIndex);
-                if (it != sectionManagers.end()) {
-                    it->second.addSymbol(s);
+                auto sit = sectionManagers.find(s.sectionIndex);
+                if (sit != sectionManagers.end()) {
+                    sit->second.addSymbol(s);
                 } else {
                     mWarn << "Coudln't find section that symbol refers to - index " << s.sectionIndex << std::endl;
                 }
@@ -216,7 +233,6 @@ class ConvertManager {
 
     void addRelocationsToRelocationManager(size_t relSectionIndex) {
         section *relocationSection = sectionManagers.find(relSectionIndex)->second.getOriginalSection();
-
         mDebug << "handling relocation section " << relocationSection->get_name()
                << std::endl;
         auto index = identifySectionByName(
@@ -243,6 +259,7 @@ class ConvertManager {
         }
         assert(sectionManagers.find(index) != sectionManagers.end());
         sectionManagers.find(index)->second.setRelocations(relocations, relocationSection);
+        mDebug << "relocation handled successfully" << std::endl;
     }
 
     void parseSections() {
@@ -256,6 +273,12 @@ class ConvertManager {
             mDebug << " [" << i << "] " << psec->get_name() << "\t"
                    << psec->get_size() << std::endl;
 
+            if (isSkippable(psec->get_name())) {
+                // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
+                continue;
+            }
+
+
             // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
             // There can be only one SYMTAB table
             if (psec->get_type() == SHT_SYMTAB) {
@@ -263,10 +286,7 @@ class ConvertManager {
             } else if (psec->get_type() == SHT_RELA) {
                 relocationSectionsToParse.push_back(i);
             }
-            if (!isSkippable(psec->get_name())) {
-                // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
-                sectionManagers.insert({i, SectionManager(psec)});
-            }
+            sectionManagers.insert({i, SectionManager(psec)});
         }
         addSymbolsToSectionManager();
         for (auto r: relocationSectionsToParse) {
@@ -275,14 +295,51 @@ class ConvertManager {
         mDebug << "Section parsing ended" << std::endl;
     }
 
+    void printParsedData() {
+        mDebug << std::endl;
+        mDebug << "---------------------------" << std::endl;
+        mDebug << "printing parsed elf file" << std::endl;
+        mDebug << "global symbols " << std::endl;
+        for (const auto &s : globalSymbols) {
+            mDebug << s << std::endl;
+        }
+        mDebug << std::endl;
+        mDebug << "sections" << std::endl;
+        for (const auto &s : sectionManagers) {
+            mDebug << std::endl;
+            mDebug << "[" << s.first << "]" << s.second.getName() << std::endl;
+            mDebug << "---- related symbols:" << std::endl;
+            if (s.second.getOriginalSectionData().sectionSymbol.has_value()) {
+                mDebug << "section symbol " << s.second.getOriginalSectionData().sectionSymbol.value() << std::endl;
+            } else {
+                mDebug << "section doesn't have section symbol" << std::endl;
+            }
+            for (const auto &sym : s.second.getOriginalSectionData().symbolsWithLocations) {
+                mDebug << sym << std::endl;
+            }
+            mDebug << "/-- related symbols END" << std::endl;
+            mDebug << "--- related relocations" << std::endl;
+            for (const auto &r : s.second.getOriginalSectionData().relocations) {
+                mDebug << r << std::endl;
+            }
+            mDebug << "/-- related rels END" << std::endl;
+            mDebug << "/-- section END" << std::endl;
+        }
+        mDebug << "/------ END PARSED DATA" << std::endl;
+    }
+
 public:
     explicit ConvertManager(const std::string &path) {
         if (!fileToConvert.load(path)) {
             zerror("Couldn't find or process file");
         }
         parseSections();
+        printParsedData();
     }
+
     void convert(const std::string &outputFile) {
+        mDebug << "starting conversion" << std::endl;
+
         ConvertedFileBuilder builder;
         std::vector<ElfStructures::SectionData> convertedSections;
         // todo jeśli na qemu będą dodawane symbole każdej sekcji (w tym sekcji relokacji oraz symboli)
@@ -298,7 +355,8 @@ public:
                 convertedSections.push_back(it.second.convert(builder.getWriter()));
             }
         }
-        builder.buildElfFile(convertedSections, globalSymbols, sectionManagers.find(symbolSectionIndex.value())->second.getOriginalSection());
+        builder.buildElfFile(convertedSections, globalSymbols,
+                             sectionManagers.find(symbolSectionIndex.value())->second.getOriginalSection());
         builder.save(outputFile);
     }
 };

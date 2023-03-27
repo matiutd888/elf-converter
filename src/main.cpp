@@ -7,8 +7,8 @@
 using namespace ELFIO;
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        std::cout << "Usage: tutorial <elf_file>" << std::endl;
+    if (argc != 3) {
+        std::cout << "Usage: converter <elf_file> <output-file>" << std::endl;
         return 1;
     }
 //    elfio reader;
@@ -20,4 +20,5 @@ int main(int argc, char **argv) {
 //    std::cout << reader.get_elf_version() << std::endl;
 
     ConvertManager manager(argv[1]);
+    manager.convert(argv[2]);
 }

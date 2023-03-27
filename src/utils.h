@@ -72,7 +72,7 @@ class KeystoneUtils {
     ks_engine *ks;
 
     KeystoneUtils() {
-        ks_err err = ks_open(KS_ARCH_ARM64, KS_MODE_64, &ks);
+        ks_err err = ks_open(KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN, &ks);
         if (err != KS_ERR_OK) {
             zerror("ERROR: failed on ks_open(), quit\n");
         }
