@@ -10,7 +10,7 @@ common.o:
 	aarch64-linux-gnu-gcc common.c -c -no-pie -o common.o
 
 x64-common.o:
-	x86_64-linux-gnu-gcc common.c -c -no-pie -o common.o
+	x86_64-linux-gnu-gcc common.c -c -no-pie -o x64-common.o
 
 test-%: %-aarch64.c %-x64-aarch64.o common.o
 	aarch64-linux-gnu-gcc $^ -no-pie -o $@
