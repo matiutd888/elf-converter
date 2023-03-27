@@ -120,7 +120,7 @@ public:
 
 class ConvertedFileBuilder {
     elfio writer;
-    Elf_Word maxIndex = 0;
+    Elf_Word maxLocalIndex = 0;
 
 public:
     ConvertedFileBuilder() {
@@ -143,12 +143,22 @@ public:
         tableIndexMappng[s.tableIndex] = newIndex;
 
         if (s.bind == STB_LOCAL) {
-            maxIndex = std::max(maxIndex, newIndex + 1);
+            maxLocalIndex = std::max(maxLocalIndex, newIndex + 1);
+        }
+    }
+
+    void addSectionSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMapping, const ElfStructures::SectionData &s, symbol_section_accessor &syma) {
+        auto newIndex = syma.add_symbol(0, s.sectionSymbol->value, s.sectionSymbol->size, s.sectionSymbol->bind, s.sectionSymbol->type, s.sectionSymbol->other, s.sectionSymbol->sectionIndex);
+        mDebug << "Adding symbol: [" << newIndex << "] " << s.sectionSymbol->value << std::endl;
+        tableIndexMapping[s.sectionSymbol->tableIndex] = newIndex;
+
+        if (s.sectionSymbol->bind == STB_LOCAL) {
+            maxLocalIndex = std::max(maxLocalIndex, newIndex + 1);
         }
     }
 
     void buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas,
-                      const std::vector<ElfStructures::Symbol> &globalSymbols, const section *originalSymbolSection);
+                      const std::vector<ElfStructures::Symbol> &externalSymbols, const section *originalSymbolSection);
 
     void save(const std::string &name) {
         writer.save(name);
@@ -161,7 +171,7 @@ class ConvertManager {
     std::map<Elf_Half, SectionManager> sectionManagers;
 
     // File symbol and external symbols
-    std::vector<ElfStructures::Symbol> globalSymbols;
+    std::vector<ElfStructures::Symbol> externalSymbols;
     std::optional<size_t> symbolSectionIndex;
 
 
@@ -214,9 +224,9 @@ class ConvertManager {
                 zerror("Error getting symbol entry");
             }
             mDebug << s << std::endl;
-            if (s.isGlobal()) {
-                mWarn << "symbol is global, will not do anything" << std::endl;
-                globalSymbols.push_back(s);
+            if (s.isExternal()) {
+                mWarn << "symbol is external, will not do anything" << std::endl;
+                externalSymbols.push_back(s);
             } else if (ElfStructures::Symbol::isSpecialUnhandled(s.sectionIndex)) {
                 mWarn << "symbols from section " << s.sectionIndex << "are not handled "
                       << std::endl;
@@ -300,7 +310,7 @@ class ConvertManager {
         mDebug << "---------------------------" << std::endl;
         mDebug << "printing parsed elf file" << std::endl;
         mDebug << "global symbols " << std::endl;
-        for (const auto &s : globalSymbols) {
+        for (const auto &s : externalSymbols) {
             mDebug << s << std::endl;
         }
         mDebug << std::endl;
@@ -346,16 +356,20 @@ public:
         // to będzie trzeba te symbole rówbnież przekaząźć builderowi
         for (auto &it: sectionManagers) {
             mDebug << it.first << ": ";
-            if (it.second.getOriginalSection()->get_type() == SHT_SYMTAB) {
+            if (it.second.getOriginalSection()->get_type() == SHT_NULL) {
+                mDebug << "not converting null section " << std::endl;
+            } else if (it.second.getOriginalSection()->get_type() == SHT_SYMTAB) {
                 mDebug << "not converting symtab section " << std::endl;
             } else if (it.second.getOriginalSection()->get_type() == SHT_RELA) {
                 mDebug << "not converting relocation section " << it.second.getName() << std::endl;
+            } else if (it.second.getOriginalSection()->get_type() == SHT_STRTAB) {
+                mDebug << "not converting string section " << it.second.getOriginalSection()->get_data() << " " << it.second.getOriginalSection()->get_index() << std::endl;
             } else {
-                mDebug << "converting section " << std::endl;
+                mDebug << "converting section " << it.second.getOriginalSection()->get_index() <<  std::endl;
                 convertedSections.push_back(it.second.convert(builder.getWriter()));
             }
         }
-        builder.buildElfFile(convertedSections, globalSymbols,
+        builder.buildElfFile(convertedSections, externalSymbols,
                              sectionManagers.find(symbolSectionIndex.value())->second.getOriginalSection());
         builder.save(outputFile);
     }

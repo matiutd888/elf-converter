@@ -2,7 +2,7 @@
 #include "ConvertManager.h"
 
 
-void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas, const std::vector<ElfStructures::Symbol> &globalSymbols, const section *originalSymbolSection) {
+void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::SectionData> &sectionDatas, const std::vector<ElfStructures::Symbol> &externalSymbols, const section *originalSymbolSection) {
     // Create string table section
     section *str_sec = writer.sections.add(".strtab");
     str_sec->set_type(SHT_STRTAB);
@@ -19,28 +19,36 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
     // Create symbol table writer
     symbol_section_accessor syma(writer, sym_sec);
 
+    std::vector<ElfStructures::Symbol> symbolsToAdd;
+
     // Add global symbols
     mDebug << "start add global symbols" << std::endl;
-    for (size_t i = 1; i < globalSymbols.size(); i++) {
-        addSymbol(tableIndexMapping, globalSymbols[i], syma, stra);
+    for (size_t i = 1; i < externalSymbols.size(); i++) {
+        symbolsToAdd.push_back(externalSymbols[i]);
     }
+
     for (const auto &s: sectionDatas) {
         mDebug << "Adding symbols declared in section " << s.s->get_index() << " " << s.s->get_name() << std::endl;
         if (s.sectionSymbol.has_value()) {
-
-            auto newIndex = syma.add_symbol(0, s.sectionSymbol->value, s.sectionSymbol->size, s.sectionSymbol->bind, s.sectionSymbol->type, s.sectionSymbol->other, s.sectionSymbol->sectionIndex);
-            mDebug << "Adding symbol: [" << newIndex << "] " << s.sectionSymbol->value << std::endl;
-            tableIndexMapping[s.sectionSymbol->tableIndex] = newIndex;
-
-            if (s.sectionSymbol->bind == STB_LOCAL) {
-                maxIndex = std::max(maxIndex, newIndex + 1);
-            }
+            // TODO czy symbole sekcji mogą być globalne
+            addSectionSymbol(tableIndexMapping, s, syma);
         }
         for (const auto &s_it: s.symbolsWithLocations) {
-            addSymbol(tableIndexMapping, s_it, syma, stra);
+            symbolsToAdd.push_back(s_it);
         }
     }
 
+    for (const auto &s : symbolsToAdd) {
+        if (s.bind == STB_LOCAL) {
+            addSymbol(tableIndexMapping, s, syma, stra);
+        }
+    }
+    for (const auto &s : symbolsToAdd) {
+        if (s.bind != STB_LOCAL) {
+            addSymbol(tableIndexMapping, s, syma, stra);
+        }
+    }
+    
     for (const auto &s: sectionDatas) {
         if (s.relatedRelocationsection.has_value()) {
             mDebug << "Section " << s.s->get_name() << " has relocations! Will be adding those relocations to the file" << std::endl;
@@ -60,7 +68,7 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
         }
     }
 
-    sym_sec->set_info(maxIndex);
+    sym_sec->set_info(maxLocalIndex);
 }
 ElfStructures::SectionData SectionManager::convert(elfio &writer) {
     section *newSection = writer.sections.add(originalSectionData.s->get_name());

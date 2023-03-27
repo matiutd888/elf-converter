@@ -45,7 +45,7 @@ namespace ElfStructures {
             return type == STT_NOTYPE || type == STT_FUNC || type == STT_OBJECT;
         }
 
-        bool isGlobal() const {
+        bool isExternal() const {
             return (type == STT_FILE) || isExternal(sectionIndex);
         }
 
