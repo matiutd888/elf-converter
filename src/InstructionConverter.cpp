@@ -62,6 +62,6 @@ HandleInstrResult InstructionConverter::handleInstruction(cs_insn *ins, const st
         return HandleInstrResult(
                 jmpHandler.handleConditionalJmp(ins, relatedRelocations));
     } else {
-        zerror("Unable to recognize instruction mnemonic!");
+        zerror("Unable to recognize instruction mnemonic! %s", ins->mnemonic);
     }
 }
