@@ -52,7 +52,7 @@ public:
     }
 
     address_t getAbsoluteAddressOfInstruction(size_t i) const {
-        if (i < armInstructions.size()) {
+        if (i >= armInstructions.size()) {
             zerror("Instruction of such index doesn't exist: %zu", i);
         }
         return armInstructions[i].second;
