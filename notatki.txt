@@ -1,3 +1,5 @@
+// TODO na dwie lub więcej funkcji
+
 RIP - adres końca instrukcji
 PC - adres obecnej instrukcji
 
