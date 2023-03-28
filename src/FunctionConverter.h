@@ -81,7 +81,7 @@ public:
     }
 
     size_t getFunctionSize() const {
-        return getNewInstructionAddressInSection();
+        return getNewInstructionAddressInSection() - newFunctionAddress;
     }
 };
 
