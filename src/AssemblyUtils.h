@@ -55,6 +55,9 @@ public:
         return AssemblyUtils::x86ToArm(CapstoneUtils::getInstance().getRegName(reg));
     }
 
+
+    static inline std::string armUImmidiate(uint64_t value) { return "#" + std::to_string(value); }
+
     static inline std::string armImmidiate(int64_t value) { return "#" + std::to_string(value); }
 
     static inline std::string armMemOp(const std::string &arg1, const std::string &arg2) {
@@ -73,7 +76,6 @@ public:
         }
     }
 };
-// namespace assemblyUtils
 
 // 1. mam skok do adresu x/
 // 2. zostaw informację - w instrukcji skoku x daj adres instrukcji z-tej

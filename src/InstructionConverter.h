@@ -40,56 +40,35 @@ public:
     }
 };
 
-// TODO refactor this terrible class
 class InstructionBuilder {
     // Lord forvie me for O(n^2) complexity of this code
     std::string ret;
 
 public:
-    static std::string makeInstr(const std::string &instruction,
-                                 const std::string &arg1, const std::string &arg2,
-                                 const std::string &arg3) {
-        return instruction + " " + arg1 + ", " + arg2 + ", " + arg3;
+    static std::string makeInstr(const std::string &instr) {
+        return instr;
     }
 
-    static std::string makeInstr(const std::string &instruction,
-                                 const std::string &arg1,
-                                 const std::string &arg2) {
-        return instruction + " " + arg1 + ", " + arg2;
+    static std::string makeInstr(const std::string &instr, const std::string &argconcat) {
+        return instr + " " + argconcat;
     }
 
-    static std::string makeInstr(const std::string &instruction,
-                                 const std::string &arg1) {
-        return instruction + " " + arg1;
+    template<typename... Args>
+    static std::string makeInstr(std::string instr,
+                                 const std::string &t1,
+                                 const std::string &t2,
+                                 Args... args) // recursive variadic function
+    {
+        return makeInstr(instr, t1 + ", " + t2, args...);
     }
 
-    explicit InstructionBuilder(const std::string &s) : ret(s) {}
+    template<typename... Args>
+    explicit InstructionBuilder(const std::string &instruction, Args... args)
+            : ret(makeInstr(instruction, args...)) {};
 
-    InstructionBuilder(const std::string &instruction, const std::string &arg1)
-            : ret(makeInstr(instruction, arg1)) {}
-
-    InstructionBuilder(const std::string &instruction, const std::string &arg1,
-                       const std::string &arg2)
-            : ret(makeInstr(instruction, arg1, arg2)) {}
-
-    InstructionBuilder append(const std::string &instruction) {
-        return InstructionBuilder(ret + "\n" + instruction);
-    }
-
-    InstructionBuilder append(const std::string &instruction,
-                              const std::string &arg1) {
-        return InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1));
-    }
-
-    InstructionBuilder append(const std::string &instruction,
-                              const std::string &arg1, const std::string &arg2) {
-        return InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2));
-    }
-
-    InstructionBuilder append(const std::string &instruction,
-                              const std::string &arg1, const std::string &arg2,
-                              const std::string &arg3) {
-        return InstructionBuilder(ret + "\n" + makeInstr(instruction, arg1, arg2, arg3));
+    template<typename... Args>
+    InstructionBuilder append(const std::string &instruction, Args... args) {
+        return InstructionBuilder(ret + "\n" + makeInstr(instruction, args...));
     }
 
     std::string build() { return ret; }
@@ -209,11 +188,9 @@ namespace InstructionConverterUtils {
     ArmStubWithRels_t readMemOpToReg(
             const std::vector<RelocationWithMAddress> &relocations, const reg_t &reg,
             x86_op_mem op, cs_insn *ins,
-            AssemblyUtils::TmpKind tmpToUse// tmpToUse is index of free tmp register
-            // this probably can be read from
-            // relocations[0].offset - ins->address
+            AssemblyUtils::TmpKind tmpToUse
     );
-}// namespace InstructionConverterUtils
+}
 
 
 class JumpInstructionToFill {
@@ -316,7 +293,6 @@ namespace InstructionConverter {
             return c;
         }
 
-        // namespace
     public:
         ArmStubWithRels_t
         handleCmp(cs_insn *ins,
@@ -587,7 +563,7 @@ namespace InstructionConverter {
                     AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES));
         }
 
-    };// namespace arithmeticInstructionHandler
+    };
 
     class JmpHandler {
         std::map<std::string, std::string> conditionalMap = {
@@ -648,13 +624,13 @@ namespace InstructionConverter {
             return JumpInstructionToFill("b" + armSuffix,
                                          ins->detail->x86.operands[0].imm);
         }
-    };// namespace jmpHandler
+    };
 
     HandleInstrResult
     handleInstruction(
             cs_insn *ins,
-            const std::vector<RelocationWithMAddress> &relatedRelocations);// namespace InstructionConverter
-}// namespace InstructionConverter
+            const std::vector<RelocationWithMAddress> &relatedRelocations);
+}
 
 struct JumpInstruction {
     size_t fromIndex;
