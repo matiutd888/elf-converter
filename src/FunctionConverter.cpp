@@ -4,7 +4,11 @@
 
 #include "FunctionConverter.h"
 
-ConvertedFunctionData FunctionConverter::convert(std::vector<ElfStructures::Relocation> relatedRelocations, const FunctionData &f) {
+const std::string FunctionConverter::TEMPORARY_JUMP_INSTRUCTION_CONTENT = "TEMPORARY-JUMP-CONTENT";
+
+ConvertedFunctionData
+FunctionConverter::convert(size_t newFunctionBaseAddress, std::vector<ElfStructures::Relocation> relatedRelocations,
+                           const FunctionData &f) {
     assert(std::is_sorted(relatedRelocations.begin(),
                           relatedRelocations.end(),
                           [](ElfStructures::Relocation r1, ElfStructures::Relocation r2) -> bool {
@@ -24,7 +28,7 @@ ConvertedFunctionData FunctionConverter::convert(std::vector<ElfStructures::Relo
     mDebug << "End of function content" << std::endl;
     mDebug << "--------------------------------------" << std::endl;
 
-    ConvertedFunctionData data;
+    ConvertedFunctionData data(newFunctionBaseAddress);
     std::queue<RelocationWithMAddress> q;
 
     for (const auto &r: relatedRelocations) {
@@ -49,29 +53,24 @@ ConvertedFunctionData FunctionConverter::convert(std::vector<ElfStructures::Relo
         switch (c.getType()) {
             case HandleInstrResult::JUMP_INSTRUCTION_TO_FILL_TYPE: {
                 JumpInstructionToFill j = c.getJ();
-                size_t toIndex =
-                        // TODO jumpy chyba nie są relatywne
-                        f.findInstructionByAddressFromBase(j.jmpImm);
+                size_t toIndex = f.findInstructionByAddressFromBase(j.jmpImm);
                 JumpInstruction jumpInstruction{
                         .fromIndex = i,
                         .toIndex = toIndex,
                         .jump = j};
 
-                data.jumps.push_back(jumpInstruction);
+                data.addJump(jumpInstruction);
 
-                data.addArmInstruction(ArmInstructionStub("soon-to-be-jump", j.sizeBytes()));
+                data.addArmInstruction(ArmInstructionStub(FunctionConverter::TEMPORARY_JUMP_INSTRUCTION_CONTENT, j.sizeBytes()));
                 break;
             }
             case HandleInstrResult::ARM_INSTRUCTION_STUB_TYPE: {
-                address_t newInstrAddress = data.getNewInstructionAddress();
+                address_t newInstrAddressInSection = data.getNewInstructionAddressInSection();
                 ArmStubWithRels_t armStubWithRels = c.getA();
                 data.addArmInstruction(armStubWithRels.first);
-                for (auto &rel: armStubWithRels.second) {
-                    rel.maddress.setRelativeToFunction(
-                            rel.maddress.getRelativeToInstruction() + newInstrAddress);
+                for (const auto &rel: armStubWithRels.second) {
+                    data.addArmRel(newInstrAddressInSection, rel);
                 }
-                data.armRels.insert(data.armRels.end(), armStubWithRels.second.begin(),
-                                    armStubWithRels.second.end());
                 break;
             }
         }
@@ -80,17 +79,19 @@ ConvertedFunctionData FunctionConverter::convert(std::vector<ElfStructures::Relo
     handleJumps(data);
     return data;
 }
-void FunctionConverter::handleJumps(ConvertedFunctionData &data) {
-    for (const auto &it: data.jumps) {
-        address_t dstAbsoluteAddress = data.armInstructions[it.toIndex].second;
 
-        data.armInstructions[it.fromIndex].first = ArmInstructionStub(
+void FunctionConverter::handleJumps(ConvertedFunctionData &data) {
+    for (const auto &it: data.getJumps()) {
+        address_t dstAbsoluteAddress = data.getAbsoluteAddressOfInstruction(it.toIndex);
+
+        data.fixupArmInstruction(it.fromIndex, ArmInstructionStub(
                 InstructionBuilder(it.jump.armMnemonic,
                                    AssemblyUtils::armUImmidiate(dstAbsoluteAddress))
                         .build(),
-                JumpInstructionToFill::sizeBytes());
+                JumpInstructionToFill::sizeBytes()));
     }
 }
+
 void FunctionConverter::convertEpilogue(const FunctionData &f, ConvertedFunctionData &data) {
     assert(strEqual(f.insn[f.numberOfInstructions - 2].mnemonic, "leave"));
     assert(strEqual(f.insn[f.numberOfInstructions - 1].mnemonic, "ret"));
@@ -104,10 +105,13 @@ void FunctionConverter::convertEpilogue(const FunctionData &f, ConvertedFunction
                                        .build(),
                                ARM_EPILOGUE_SIZE_BYTES));
 }
-bool FunctionConverter::checkIfAddressBetweenInstruction(address_t offsetFromBase, address_t instructionOffsetFromBase, size_t instructionSize) {
+
+bool FunctionConverter::checkIfAddressBetweenInstruction(address_t offsetFromBase, address_t instructionOffsetFromBase,
+                                                         size_t instructionSize) {
     return offsetFromBase >= instructionOffsetFromBase &&
            offsetFromBase <= instructionOffsetFromBase + instructionSize;
 }
+
 void FunctionConverter::convertPrologue(const FunctionData &f, ConvertedFunctionData &data) {
     assert(strEqual(f.insn[0].mnemonic, "endbr64"));
     assert(strEqual(f.insn[1].mnemonic, "push") &&

@@ -138,11 +138,14 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
             chunkStart = functionEndAddress;
             const FunctionData fData(&originalSectionData.s->get_data()[function->value], function->size,
                                      function->value);
+
+            address_t newFunctionAddressInSection = newSectionBuilder.sectionSize();
             newSectionBuilder.addConvertedFunctionData(function.value(),
-                                                       FunctionConverter::convert(
-                                                               getRelatedRelocations(originalSectionData.relocations,
-                                                                                     function->value,
-                                                                                     functionEndAddress), fData));
+                                                       FunctionConverter::convert(newFunctionAddressInSection,
+                                                                                  getRelatedRelocations(
+                                                                                          originalSectionData.relocations,
+                                                                                          function->value,
+                                                                                          functionEndAddress), fData));
         }
     }
     return newSectionBuilder.setDataAndBuild();
@@ -194,12 +197,6 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
     mDebug << content << std::endl;
     mDebug << "End of function content" << std::endl;
     mDebug << "-----------------------------" << std::endl;
-
-    for (const auto &it: fData.getRelocations()) {
-        MAddress addr = it.maddress;
-        addr.setRelativeToSection(addr.getRelativeToFunction() + functionAddress);
-        data.relocations.emplace_back(addr.getRelativeToSection(), it.symbol(), it.type(), it.addend());
-    }
 
     {
         unsigned char *encoded;

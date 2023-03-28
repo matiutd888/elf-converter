@@ -18,7 +18,6 @@ class ConvertedFunctionData;
 class FunctionConverter;
 
 class ConvertedFunctionData {
-    friend FunctionConverter;
     using ArmInstructionStubWithAddress =
             std::pair<ArmInstructionStub, address_t>;
 
@@ -26,20 +25,43 @@ class ConvertedFunctionData {
     std::vector<JumpInstruction> jumps;
     std::vector<RelocationWithMAddress> armRels;
 
-    address_t getNewInstructionAddress() const {
+    size_t newFunctionAddress;
+
+public:
+    address_t getNewInstructionAddressInSection() const {
         if (armInstructions.empty()) {
-            return 0;
+            return newFunctionAddress;
         } else {
             return armInstructions.back().second +
                    armInstructions.back().first.sizeBytes;
         }
     }
 
-    void addArmInstruction(const ArmInstructionStub &a) {
-        armInstructions.emplace_back(a, getNewInstructionAddress());
+    void addJump(const JumpInstruction &j) {
+        jumps.push_back(j);
     }
 
-public:
+    explicit ConvertedFunctionData(size_t newFunctionAddress) : newFunctionAddress(newFunctionAddress) {}
+
+    void addArmInstruction(const ArmInstructionStub &a) {
+        armInstructions.emplace_back(a, getNewInstructionAddressInSection());
+    }
+
+    const std::vector<JumpInstruction> &getJumps() const {
+        return jumps;
+    }
+
+    address_t getAbsoluteAddressOfInstruction(size_t i) const {
+        if (i < armInstructions.size()) {
+            zerror("Instruction of such index doesn't exist: %zu", i);
+        }
+        return armInstructions[i].second;
+    }
+
+    void fixupArmInstruction(size_t index, const ArmInstructionStub &s) {
+        armInstructions[index].first = s;
+    };
+
     std::string getContent() const {
         std::string content;
         for (const auto &it: armInstructions) {
@@ -47,12 +69,14 @@ public:
         }
         return content;
     }
-    size_t getFunctionSize() const {
-        return getNewInstructionAddress();
+
+    void addArmRel(size_t instructionAddressInSection, RelocationWithMAddress relocationWithMAddress) {
+        relocationWithMAddress.maddress.setRelativeToSection(relocationWithMAddress.maddress.getRelativeToInstruction() + instructionAddressInSection);
+        armRels.push_back(relocationWithMAddress);
     }
 
-    const std::vector<RelocationWithMAddress> &getRelocations() const {
-        return armRels;
+    size_t getFunctionSize() const {
+        return getNewInstructionAddressInSection();
     }
 };
 
@@ -93,6 +117,8 @@ public:
 };
 
 class FunctionConverter {
+    const static std::string TEMPORARY_JUMP_INSTRUCTION_CONTENT;
+
     static const int X64_PROLOGUE_SIZE = 3;
     static const int X64_EPILOGUE_SIZE = 2;
     static const int ARM_PROLOG_SIZE_BYTES =
@@ -117,10 +143,8 @@ class FunctionConverter {
 
     static void handleJumps(ConvertedFunctionData &data);;
 
-    static address_t getRip(cs_insn *ins) { return ins->address + ins->size; }
-
 public:
-    static ConvertedFunctionData convert(std::vector<ElfStructures::Relocation> relatedRelocations,
+    static ConvertedFunctionData convert(size_t newFunctionBaseAddress, std::vector<ElfStructures::Relocation> relatedRelocations,
                                          const FunctionData &f);
 };
 

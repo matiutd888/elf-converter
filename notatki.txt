@@ -1,4 +1,5 @@
 // TODO na dwie lub więcej funkcji
+// TODO usun niepotrzebne asercje oraz niepotrzebne mWarn z kodu
 
 RIP - adres końca instrukcji
 PC - adres obecnej instrukcji
