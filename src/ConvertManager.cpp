@@ -198,6 +198,12 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
     mDebug << "End of function content" << std::endl;
     mDebug << "-----------------------------" << std::endl;
 
+    for (const auto &it: fData.getRelocations()) {
+        MAddress addr = it.maddress;
+        addr.setRelativeToSection(addr.getRelativeToFunction() + functionAddress);
+        data.relocations.emplace_back(addr.getRelativeToSection(), it.symbol(), it.type(), it.addend());
+    }
+
     {
         unsigned char *encoded;
         size_t count;

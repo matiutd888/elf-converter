@@ -25,7 +25,7 @@ class ConvertedFunctionData {
     std::vector<JumpInstruction> jumps;
     std::vector<RelocationWithMAddress> armRels;
 
-    size_t newFunctionAddress;
+    const size_t newFunctionAddress;
 
 public:
     address_t getNewInstructionAddressInSection() const {
@@ -72,7 +72,12 @@ public:
 
     void addArmRel(size_t instructionAddressInSection, RelocationWithMAddress relocationWithMAddress) {
         relocationWithMAddress.maddress.setRelativeToSection(relocationWithMAddress.maddress.getRelativeToInstruction() + instructionAddressInSection);
+        relocationWithMAddress.maddress.setRelativeToFunction(relocationWithMAddress.maddress.getRelativeToInstruction() + instructionAddressInSection - newFunctionAddress);
         armRels.push_back(relocationWithMAddress);
+    }
+
+    const std::vector<RelocationWithMAddress> &getRelocations() const {
+        return armRels;
     }
 
     size_t getFunctionSize() const {
