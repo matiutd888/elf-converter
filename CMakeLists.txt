@@ -15,7 +15,7 @@ add_subdirectory (elfio-3.11)
 
 add_executable (converter
         src/main.cpp
-        src/utils.cpp src/utils.h
+        src/Utils.cpp src/Utils.h
         src/ConvertManager.cpp src/ConvertManager.h
         src/AssemblyUtils.h src/AssemblyUtils.cpp
         src/InstructionConverter.h src/InstructionConverter.cpp

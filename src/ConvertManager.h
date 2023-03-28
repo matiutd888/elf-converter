@@ -9,7 +9,7 @@
 #include "ElfStructures.h"
 #include "FunctionConverter.h"
 #include "InstructionConverter.h"
-#include "utils.h"
+#include "Utils.h"
 #include <algorithm>
 #include <cassert>
 #include <elfio/elfio.hpp>
