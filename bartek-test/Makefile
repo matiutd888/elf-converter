@@ -15,3 +15,7 @@ test-x64-aarch64.o: test-x64.o
 
 clean:
 	rm -f *.o test
+
+##### x64 test
+x64-test: test.c test-x64.o
+	x86_64-linux-gnu-gcc -fcf-protection=branch test.c test-x64.o -no-pie -o x64-test
