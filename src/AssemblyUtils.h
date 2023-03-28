@@ -30,14 +30,6 @@ public:
 
     // Works for Arm and x86
     static reg_t convertRegisterMemSize(Arch arch, MemSize memSize, const reg_t &r);
-    //    bool isRegister(std::string s) {
-    //        return registerMaps32.find(s) != registerMaps32.end() ||
-    //        registerMaps64.find(s) != registerMaps64.end();
-    //    }
-    //
-    //    bool isMem(std::string operand) {
-    //        return operand.find("[")  != std::string::npos;
-    //    }
 
     static reg_t x86ToArm(const reg_t &r86);
 
@@ -76,31 +68,5 @@ public:
         }
     }
 };
-
-// 1. mam skok do adresu x/
-// 2. zostaw informację - w instrukcji skoku x daj adres instrukcji z-tej
-// 3.
-
-// Potrzebuję info
-// 1. jaka jest instrukcja w adresie x-tym
-
-// Instrukcja
-// 1. wyczytaj czy jest operand grep \[rip + xd\]
-// 2. wczytaj jakie bajty za niego odpowiadają
-
-// convertowanie instrukcji
-
-// 1. mam instrukcję
-// 2. w jaki sposób wygenerować dla niej
-
-// dane: string mający zapis instrukcji i jej rozmiar w bajtach
-// ewentualna relokacja do drugiego argumentu
-// oczekiwane:
-// 1. zamienienie stringa na odpowiadający string z instrukcją
-//      1.1 nauczyć się handlować wartości mem
-//      1.2 jeżeli mem dotyczy
-// 2. na jaki bajt przekoczy relokacja
-// mov [rel],
-
 
 #endif//CONVERTERPROJECT_ASSEMBLYUTILS_H

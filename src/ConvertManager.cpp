@@ -32,7 +32,7 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
     for (const auto &s: sectionDatas) {
         mDebug << "Adding symbols declared in section " << s.s->get_index() << " " << s.s->get_name() << std::endl;
         if (s.sectionSymbol.has_value()) {
-            // TODO czy symbole sekcji mogą być globalne
+            //  TODO czy symbole sekcji mogą być globalne
             addSectionSymbol(tableIndexMapping, s, syma);
         }
         for (const auto &s_it: s.symbolsWithLocations) {
