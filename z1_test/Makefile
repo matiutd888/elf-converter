@@ -20,7 +20,7 @@ x64-test-%: %-aarch64.c %-x64.o x64-common.o
 
 
 %-x64.o: %-x64.c
-	 -fcf-protection=branch -fno-pic -mcmodel=small -fno-common -fno-stack-protector -mno-red-zone -c $<
+	 x86_64-linux-gnu-gcc -fcf-protection=branch -fno-pic -mcmodel=small -fno-common -fno-stack-protector -mno-red-zone -c $<
 
 %-x64-aarch64.o: converter %-x64.o
 	./converter $(filter-out $<,$^) $@
