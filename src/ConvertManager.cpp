@@ -139,10 +139,8 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
             const FunctionData fData(&originalSectionData.s->get_data()[function->value], function->size,
                                      function->value);
 
-            address_t newFunctionAddressInSection = newSectionBuilder.sectionSize();
             newSectionBuilder.addConvertedFunctionData(function.value(),
-                                                       FunctionConverter::convert(newFunctionAddressInSection,
-                                                                                  getRelatedRelocations(
+                                                       FunctionConverter::convert(getRelatedRelocations(
                                                                                           originalSectionData.relocations,
                                                                                           function->value,
                                                                                           functionEndAddress), fData));

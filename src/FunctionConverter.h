@@ -25,12 +25,10 @@ class ConvertedFunctionData {
     std::vector<JumpInstruction> jumps;
     std::vector<RelocationWithMAddress> armRels;
 
-    const size_t newFunctionAddress;
-
 public:
-    address_t getNewInstructionAddressInSection() const {
+    address_t getNewInstructionAddressInFunction() const {
         if (armInstructions.empty()) {
-            return newFunctionAddress;
+            return 0;
         } else {
             return armInstructions.back().second +
                    armInstructions.back().first.sizeBytes;
@@ -41,17 +39,15 @@ public:
         jumps.push_back(j);
     }
 
-    explicit ConvertedFunctionData(size_t newFunctionAddress) : newFunctionAddress(newFunctionAddress) {}
-
     void addArmInstruction(const ArmInstructionStub &a) {
-        armInstructions.emplace_back(a, getNewInstructionAddressInSection());
+        armInstructions.emplace_back(a, getNewInstructionAddressInFunction());
     }
 
     const std::vector<JumpInstruction> &getJumps() const {
         return jumps;
     }
 
-    address_t getAbsoluteAddressOfInstruction(size_t i) const {
+    address_t getAddressOfInstructionInFunction(size_t i) const {
         if (i >= armInstructions.size()) {
             zerror("Instruction of such index doesn't exist: %zu", i);
         }
@@ -75,8 +71,7 @@ public:
     }
 
     void addArmRel(size_t instructionAddressInSection, RelocationWithMAddress relocationWithMAddress) {
-        relocationWithMAddress.maddress.setRelativeToSection(relocationWithMAddress.maddress.getRelativeToInstruction() + instructionAddressInSection);
-        relocationWithMAddress.maddress.setRelativeToFunction(relocationWithMAddress.maddress.getRelativeToInstruction() + instructionAddressInSection - newFunctionAddress);
+        relocationWithMAddress.maddress.setRelativeToFunction(relocationWithMAddress.maddress.getRelativeToInstruction() + instructionAddressInSection);
         armRels.push_back(relocationWithMAddress);
     }
 
@@ -85,7 +80,7 @@ public:
     }
 
     size_t getFunctionSize() const {
-        return getNewInstructionAddressInSection() - newFunctionAddress;
+        return getNewInstructionAddressInFunction();
     }
 };
 
@@ -153,7 +148,7 @@ class FunctionConverter {
     static void handleJumps(ConvertedFunctionData &data);;
 
 public:
-    static ConvertedFunctionData convert(size_t newFunctionBaseAddress, std::vector<ElfStructures::Relocation> relatedRelocations,
+    static ConvertedFunctionData convert(std::vector<ElfStructures::Relocation> relatedRelocations,
                                          const FunctionData &f);
 };
 

@@ -7,7 +7,7 @@
 const std::string FunctionConverter::TEMPORARY_JUMP_INSTRUCTION_CONTENT = "TEMPORARY-JUMP-CONTENT";
 
 ConvertedFunctionData
-FunctionConverter::convert(size_t newFunctionBaseAddress, std::vector<ElfStructures::Relocation> relatedRelocations,
+FunctionConverter::convert(std::vector<ElfStructures::Relocation> relatedRelocations,
                            const FunctionData &f) {
     assert(std::is_sorted(relatedRelocations.begin(),
                           relatedRelocations.end(),
@@ -28,7 +28,7 @@ FunctionConverter::convert(size_t newFunctionBaseAddress, std::vector<ElfStructu
     mDebug << "End of function content" << std::endl;
     mDebug << "--------------------------------------" << std::endl;
 
-    ConvertedFunctionData data(newFunctionBaseAddress);
+    ConvertedFunctionData data;
     std::queue<RelocationWithMAddress> q;
 
     for (const auto &r: relatedRelocations) {
@@ -61,15 +61,16 @@ FunctionConverter::convert(size_t newFunctionBaseAddress, std::vector<ElfStructu
 
                 data.addJump(jumpInstruction);
 
-                data.addArmInstruction(ArmInstructionStub(FunctionConverter::TEMPORARY_JUMP_INSTRUCTION_CONTENT, j.sizeBytes()));
+                data.addArmInstruction(
+                        ArmInstructionStub(FunctionConverter::TEMPORARY_JUMP_INSTRUCTION_CONTENT, j.sizeBytes()));
                 break;
             }
             case HandleInstrResult::ARM_INSTRUCTION_STUB_TYPE: {
-                address_t newInstrAddressInSection = data.getNewInstructionAddressInSection();
+                address_t newInstrAddressInFunction = data.getNewInstructionAddressInFunction();
                 ArmStubWithRels_t armStubWithRels = c.getA();
                 data.addArmInstruction(armStubWithRels.first);
                 for (const auto &rel: armStubWithRels.second) {
-                    data.addArmRel(newInstrAddressInSection, rel);
+                    data.addArmRel(newInstrAddressInFunction, rel);
                 }
                 break;
             }
@@ -82,13 +83,14 @@ FunctionConverter::convert(size_t newFunctionBaseAddress, std::vector<ElfStructu
 
 void FunctionConverter::handleJumps(ConvertedFunctionData &data) {
     for (const auto &it: data.getJumps()) {
-        mDebug << "handling jump instruction from instruction " << it.fromIndex << " to instruction " << it.toIndex << ". Number of instructions: " << data.getNumberOfInstructions() << std::endl;
+        mDebug << "handling jump instruction from instruction " << it.fromIndex << " to instruction " << it.toIndex
+               << ". Number of instructions: " << data.getNumberOfInstructions() << std::endl;
 
-        address_t dstAbsoluteAddress = data.getAbsoluteAddressOfInstruction(it.toIndex);
+        address_t dstAddressInFunction = data.getAddressOfInstructionInFunction(it.toIndex);
 
         data.fixupArmInstruction(it.fromIndex, ArmInstructionStub(
                 InstructionBuilder(it.jump.armMnemonic,
-                                   AssemblyUtils::armUImmidiate(dstAbsoluteAddress))
+                                   AssemblyUtils::armUImmidiate(dstAddressInFunction))
                         .build(),
                 JumpInstructionToFill::sizeBytes()));
     }
