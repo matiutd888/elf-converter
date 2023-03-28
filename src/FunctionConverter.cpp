@@ -84,13 +84,13 @@ void FunctionConverter::handleJumps(ConvertedFunctionData &data) {
     for (const auto &it: data.jumps) {
         address_t dstAbsoluteAddress = data.armInstructions[it.toIndex].second;
         address_t srcAbsoluteAddress = data.armInstructions[it.fromIndex].second;
-
-        // TODO czy ta konwersja jest dobra.
-        int64_t difference =
-                int64_t(dstAbsoluteAddress) - int64_t(srcAbsoluteAddress);
+//
+//        // TODO czy ta konwersja jest dobra.
+//        int64_t difference =
+//                int64_t(dstAbsoluteAddress) - int64_t(srcAbsoluteAddress);
         data.armInstructions[it.fromIndex].first = ArmInstructionStub(
                 InstructionBuilder(it.jump.armMnemonic,
-                                   AssemblyUtils::armImmidiate(difference))
+                                   AssemblyUtils::armImmidiate(dstAbsoluteAddress))
                         .build(),
                 JumpInstructionToFill::sizeBytes());
     }
