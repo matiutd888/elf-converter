@@ -82,6 +82,8 @@ FunctionConverter::convert(size_t newFunctionBaseAddress, std::vector<ElfStructu
 
 void FunctionConverter::handleJumps(ConvertedFunctionData &data) {
     for (const auto &it: data.getJumps()) {
+        mDebug << "handling jump instruction from instruction " << it.fromIndex << " to instruction " << it.toIndex << ". Number of instructions: " << data.getNumberOfInstructions() << std::endl;
+
         address_t dstAbsoluteAddress = data.getAbsoluteAddressOfInstruction(it.toIndex);
 
         data.fixupArmInstruction(it.fromIndex, ArmInstructionStub(

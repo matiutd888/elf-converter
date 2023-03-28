@@ -58,6 +58,10 @@ public:
         return armInstructions[i].second;
     }
 
+    size_t getNumberOfInstructions( ) const {
+        return armInstructions.size();
+    }
+
     void fixupArmInstruction(size_t index, const ArmInstructionStub &s) {
         armInstructions[index].first = s;
     };
