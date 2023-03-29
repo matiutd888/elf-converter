@@ -152,12 +152,13 @@ public:
         }
     }
 
-    void addSectionSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMapping, const ElfStructures::SectionData &s, symbol_section_accessor &syma) {
-        auto newIndex = syma.add_symbol(0, s.sectionSymbol->value, s.sectionSymbol->size, s.sectionSymbol->bind, s.sectionSymbol->type, s.sectionSymbol->other, s.sectionSymbol->sectionIndex);
-        mDebug << "Adding symbol: [" << newIndex << "] " << s.sectionSymbol->value << std::endl;
-        tableIndexMapping[s.sectionSymbol->tableIndex] = newIndex;
+    void addSectionSymbol(std::map<Elf_Word, Elf_Word> &tableIndexMapping, const ElfStructures::Symbol &s, symbol_section_accessor &syma) {
+        // Set string table index to 0.
+        auto newIndex = syma.add_symbol(0, s.value, s.size, s.bind, s.type, s.other, s.sectionIndex);
+        mDebug << "Adding symbol: [" << newIndex << "] " << s.value << std::endl;
+        tableIndexMapping[s.tableIndex] = newIndex;
 
-        if (s.sectionSymbol->bind == STB_LOCAL) {
+        if (s.bind == STB_LOCAL) {
             maxLocalIndex = std::max(maxLocalIndex, newIndex + 1);
         }
     }

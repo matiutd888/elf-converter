@@ -24,8 +24,7 @@ W rozwiązanie składa się z trzech faz
 
 #### Uwagi
 1. Zakładam, że nie ma jumpów do "środka" prologu lub epilogu. Skoczyć można jedynie na początek tych fragmentów.
-2. Zakładam, że symbole sekcji mają wiązania lokalne (`STB_LOCAL`)
-3. Zakładam, że jest co najwyżej jedna sekcja relokacji dla danej sekcji.
+2. Zakładam, że jest co najwyżej jedna sekcja relokacji dla danej sekcji.
 
 ### Uruchamianie
 Należy pobrać odpowiednie biblioteki, <em>Capstone</em>, <em>Keystone</em> oraz _elfio_

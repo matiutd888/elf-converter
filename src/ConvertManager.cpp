@@ -22,7 +22,7 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
     symbol_section_accessor syma(writer, sym_sec);
 
     std::vector<ElfStructures::Symbol> symbolsToAdd;
-
+    std::vector<ElfStructures::Symbol> sectionSymbolsToAdd;
     // Add global symbols
     mDebug << "start add external symbols" << std::endl;
     for (const auto &s : externalSymbols) {
@@ -34,22 +34,34 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
     for (const auto &s: sectionDatas) {
         mDebug << "Adding symbols declared in section " << s.s->get_index() << " " << s.s->get_name() << std::endl;
         if (s.sectionSymbol.has_value()) {
-            //  TODO czy symbole sekcji mogą być globalne
-            addSectionSymbol(tableIndexMapping, s, syma);
+            sectionSymbolsToAdd.push_back(s.sectionSymbol.value());
         }
         for (const auto &s_it: s.symbolsWithLocations) {
             symbolsToAdd.push_back(s_it);
         }
     }
 
+    // Add local symbols first
     for (const auto &s: symbolsToAdd) {
         if (s.bind == STB_LOCAL) {
             addSymbol(tableIndexMapping, s, syma, stra);
         }
     }
+    for (const auto &s: sectionSymbolsToAdd) {
+        if (s.bind == STB_LOCAL) {
+            addSectionSymbol(tableIndexMapping, s, syma);
+        }
+    }
+
+    // And non-local symbols second
     for (const auto &s: symbolsToAdd) {
         if (s.bind != STB_LOCAL) {
             addSymbol(tableIndexMapping, s, syma, stra);
+        }
+    }
+    for (const auto &s: sectionSymbolsToAdd) {
+        if (s.bind != STB_LOCAL) {
+            addSectionSymbol(tableIndexMapping, s, syma);
         }
     }
 

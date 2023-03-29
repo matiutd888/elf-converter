@@ -130,7 +130,7 @@ class FunctionConverter {
     static const int ARM_EPILOGUE_SIZE_BYTES =
             AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES * 4;
 
-    // TODO nie obsługuję skoczenia do ŚRODKA prologu (umiem skoczyć jedynie na
+    // Nie obsługuję skoczenia do ŚRODKA prologu (umiem skoczyć jedynie na
     // początek)
     static void convertPrologue(const FunctionData &f,
                                 ConvertedFunctionData &data);
@@ -140,7 +140,7 @@ class FunctionConverter {
                                      address_t instructionOffsetFromBase,
                                      size_t instructionSize);
 
-    // TODO nie obsługuję skoczenia do ŚRODKA epilogu (umiem skoczyć jedynie na
+    // Nie obsługuję skoczenia do ŚRODKA epilogu (umiem skoczyć jedynie na
     // początek)
     static void convertEpilogue(const FunctionData &f,
                                 ConvertedFunctionData &data);

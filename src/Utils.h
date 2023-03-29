@@ -12,7 +12,6 @@
 
 #define mDebug (std::cout << "DEBUG: ")
 #define mWarn (std::cout << "WARN: ")
-#define todo(S) zerror("TODO: " S)
 
 #define zerror(I, ...)                 \
     fprintf(stderr, I, ##__VA_ARGS__); \

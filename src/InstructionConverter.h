@@ -57,7 +57,7 @@ public:
     static std::string makeInstr(std::string instr,
                                  const std::string &t1,
                                  const std::string &t2,
-                                 Args... args) // recursive variadic function
+                                 Args... args)
     {
         return makeInstr(instr, t1 + ", " + t2, args...);
     }
@@ -183,8 +183,6 @@ namespace InstructionConverterUtils {
     // if operand is [rip + x], what byte is x in in the instruction
     // example: cmp qword ptr [rip + _], 2137 would have relocation for the byte 3
     // cmp qword ptr [rip + _], 2137 would be having relocation for byte 2
-    // TODO maybe tmpToUse should ALWAYS be tmp1
-    // It doesnt hurt us even when reg is tmp1 probably
     ArmStubWithRels_t readMemOpToReg(
             const std::vector<RelocationWithMAddress> &relocations, const reg_t &reg,
             x86_op_mem op, cs_insn *ins,
