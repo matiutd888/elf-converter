@@ -229,7 +229,7 @@ void SectionBuilder::addConvertedFunctionData(const ElfStructures::Symbol &origi
         assert(keystoneSize == fSize);
 
         sSize += keystoneSize;
-        for (int i = 0; i < keystoneSize; i++) {
+        for (size_t i = 0; i < keystoneSize; i++) {
             bytes.push_back(encoded[i]);
         }
         free(encoded);

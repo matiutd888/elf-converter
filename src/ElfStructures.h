@@ -43,7 +43,7 @@ namespace ElfStructures {
         }
 
         bool isSymbolWithLocation() const {
-            return type == STT_NOTYPE || type == STT_FUNC || type == STT_OBJECT;
+            return (type == STT_NOTYPE) || (type == STT_FUNC) || (type == STT_OBJECT);
         }
 
         bool isExternal() const {
@@ -85,8 +85,8 @@ namespace ElfStructures {
             : offset(offset), symbol(symbol), type(type), addend(addend) {}
 
         static bool isRelocationHandled(unsigned type) {
-            return type == R_X86_64_PC32 | type == R_X86_64_PLT32 |
-                   type == R_X86_64_32 | type == R_X86_64_32S | type == R_X86_64_64;
+            return (type == R_X86_64_PC32) || (type == R_X86_64_PLT32) ||
+                   (type == R_X86_64_32) || (type == R_X86_64_32S) || (type == R_X86_64_64);
         }
 
         friend std::ostream &operator<<(std::ostream &os,

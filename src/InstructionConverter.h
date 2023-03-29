@@ -24,7 +24,7 @@ struct ArmInstructionStub {
             assert(size == 0);
         } else {
             assert(size % AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES == 0);
-            assert(std::count(content.begin(), content.end(), '\n') + 1 ==
+            assert((size_t) std::count(content.begin(), content.end(), '\n') + 1 ==
                    size / AssemblyUtils::ARM_INSTRUCTION_SIZE_BYTES);
         }
     }
@@ -64,7 +64,7 @@ public:
 
     template<typename... Args>
     explicit InstructionBuilder(const std::string &instruction, Args... args)
-            : ret(makeInstr(instruction, args...)) {};
+            : ret(makeInstr(instruction, args...)) {}
 
     template<typename... Args>
     InstructionBuilder append(const std::string &instruction, Args... args) {
@@ -467,7 +467,7 @@ namespace InstructionConverter {
         ArmStubWithRels_t
         handleMov(cs_insn *ins,
                   const std::vector<RelocationWithMAddress> &relatedRelocations) {
-            assert(ins->detail->x86.op_count = 2);
+            assert(ins->detail->x86.op_count == 2);
             switch (ins->detail->x86.operands[0].type) {
                 case x86_op_type::X86_OP_REG:
                     return handleMovReg(ins, relatedRelocations);

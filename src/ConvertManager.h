@@ -243,7 +243,7 @@ class ConvertManager {
         const relocation_section_accessor relocationSectionAccessor(
                 fileToConvert, relocationSection);
         std::vector<ElfStructures::Relocation> relocations;
-        for (int i = 0; i < relocationSectionAccessor.get_entries_num(); i++) {
+        for (size_t i = 0; i < relocationSectionAccessor.get_entries_num(); i++) {
             ElfStructures::Relocation r;
             if (!relocationSectionAccessor.get_entry(i, r.offset, r.symbol, r.type,
                                                      r.addend)) {

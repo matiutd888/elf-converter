@@ -16,7 +16,7 @@ using reg_t = std::string;
 
 class AssemblyUtils {
 public:
-    static const int ARM_INSTRUCTION_SIZE_BYTES = 4;
+    static const size_t ARM_INSTRUCTION_SIZE_BYTES = 4;
     enum Arch { Aarch64 = 0,
                 X86_64 = 1 };
 

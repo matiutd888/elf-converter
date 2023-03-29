@@ -1,4 +1,4 @@
-project(ConverterProject C CXX)
+project(ConverterProject CXX)
 
 cmake_minimum_required (VERSION 3.12)
 
@@ -16,6 +16,8 @@ add_executable (converter
         src/ElfStructures.h )
 
 include(FindPkgConfig)
+
+set(CMAKE_CXX_FLAGS "-Wall -Wextra -pedantic")
 
 pkg_check_modules (CAPSTONE REQUIRED capstone)
 #pkg_check_modules (KEYSTONE REQUIRED keystone)

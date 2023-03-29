@@ -108,16 +108,9 @@ class FunctionData {
 
 public:
     FunctionData(const char *rawData, size_t size, address_t baseAddress)
-        : insn(nullptr), baseAddress(baseAddress),
+        : baseAddress(baseAddress), insn(nullptr),
           numberOfInstructions(CapstoneUtils::getInstance().disassemble(
                   reinterpret_cast<const uint8_t *>(rawData), size, &insn)) {}
-
-    // This probably will not be neccessaru
-    //  address_t getNewAddress(address_t oldAddress) {
-    //    if (!converted) {
-    //      zerror("Function hasn't been converted yet");;
-    //    }
-    //  }
 };
 
 class FunctionConverter {
@@ -145,7 +138,7 @@ class FunctionConverter {
     static void convertEpilogue(const FunctionData &f,
                                 ConvertedFunctionData &data);
 
-    static void handleJumps(ConvertedFunctionData &data);;
+    static void handleJumps(ConvertedFunctionData &data);
 
 public:
     static ConvertedFunctionData convert(std::vector<ElfStructures::Relocation> relatedRelocations,
