@@ -138,6 +138,9 @@ ElfStructures::SectionData SectionManager::convert(elfio &writer) {
         if (function.has_value()) {
             address_t functionEndAddress = function->value + function->size;
             chunkStart = functionEndAddress;
+            assert(originalSectionData.s->get_data() != nullptr);
+            assert(originalSectionData.s->get_size() >= functionEndAddress);
+
             const FunctionData fData(&originalSectionData.s->get_data()[function->value], function->size,
                                      function->value);
 
