@@ -21,8 +21,10 @@ FunctionConverter::convert(std::vector<ElfStructures::Relocation> relatedRelocat
     mDebug << "Converting function at address " << f.baseAddress << " with " << f.numberOfInstructions << std::endl;
     mDebug << "Function content" << std::endl;
     for (size_t i = 0; i < f.numberOfInstructions; i++) {
-        printf("0x%" PRIx64":\t%s\t\t%s\n", f.insn[i].address, f.insn[i].mnemonic,
-               f.insn[i].op_str);
+        if (M_DEBUG) {
+            printf("0x%" PRIx64":\t%s\t\t%s\n", f.insn[i].address, f.insn[i].mnemonic,
+                   f.insn[i].op_str);
+        }
     }
     mDebug << std::endl;
     mDebug << "End of function content" << std::endl;

@@ -50,7 +50,7 @@ sudo ldconfig
 #### Dalsze kroki
 Następnie w katalogu w którym chcemy mieć rozwiązanie, rozpakowujemy je i dodajemy source code biblioteki elfio
 ````bash
-unzip mn418323.zip
+tar xf mn418323.tar
 wget https://github.com/serge1/ELFIO/releases/download/Release_3.11/elfio-3.11.tar.gz
 tar xf elfio-3.11.tar.gz
 ````
