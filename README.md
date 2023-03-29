@@ -31,7 +31,8 @@ Należy pobrać odpowiednie biblioteki, <em>Capstone</em>, <em>Keystone</em> ora
 
 #### Instalacja Capstone
 ```bash
- sudo apt-get install libcapstone2
+sudo apt-get update
+sudo apt-get install libcapstone-dev
 ```
 ##### Instalacja Keystone
 ```bash
@@ -39,8 +40,7 @@ git clone https://github.com/keystone-engine/keystone/
 cd keystone
 mkdir build
 cd build
-../make-shared.sh
-make install
+../make-share.sh
 sudo make install
 sudo sh -c 'echo "/usr/local/lib" >> /etc/ld.so.conf'
 sudo ldconfig
