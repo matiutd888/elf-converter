@@ -193,23 +193,6 @@ class ConvertManager {
                ends_with(sectionName, ".eh_frame");
     }
 
-    int64_t identifySectionByName(const std::string &sectionName) const {
-        mDebug << "finding " << sectionName << std::endl;
-        for (const auto &sectionEntry: sectionManagers) {
-            if (sectionEntry.second.getName() == sectionName) {
-                return sectionEntry.first;
-            }
-        }
-        mWarn << "Couldn't identify section by name" << std::endl;
-        return -1;
-    }
-
-    static std::string
-    getSectionNameFromRelocationSectionName(const std::string &relocationName) {
-        assert(relocationName.substr(0, 5) == ".rela");
-        return relocationName.substr(5);
-    }
-
     void addSymbolsToSectionManager() {
         if (!symbolSectionIndex.has_value()) {
             zerror("Symbol section wan't parsed yet!");
@@ -249,9 +232,8 @@ class ConvertManager {
         section *relocationSection = sectionManagers.find(relSectionIndex)->second.getOriginalSection();
         mDebug << "handling relocation section " << relocationSection->get_name()
                << std::endl;
-        auto index = identifySectionByName(
-                getSectionNameFromRelocationSectionName(relocationSection->get_name()));
-        if (index < 0) {
+        auto index = relocationSection->get_info();
+        if (sectionManagers.find(index) == sectionManagers.end()) {
             mWarn << "couldn't find section that the relocation section "
                   << relocationSection->get_name() << " relate to" << std::endl;
             return;
@@ -288,7 +270,6 @@ class ConvertManager {
                    << psec->get_size() << std::endl;
 
             if (isSkippable(psec->get_name())) {
-                // pomyśleć co z symbolami, które odnoszą się do usuniętych sekcji
                 continue;
             }
             // https://stackoverflow.com/questions/3269590/can-elf-file-contain-more-than-one-symbol-table
