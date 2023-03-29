@@ -25,8 +25,10 @@ void ConvertedFileBuilder::buildElfFile(const std::vector<ElfStructures::Section
 
     // Add global symbols
     mDebug << "start add external symbols" << std::endl;
-    for (size_t i = 1; i < externalSymbols.size(); i++) {
-        symbolsToAdd.push_back(externalSymbols[i]);
+    for (const auto &s : externalSymbols) {
+        if (!s.isZeroEntry()) {
+            symbolsToAdd.push_back(s);
+        }
     }
 
     for (const auto &s: sectionDatas) {

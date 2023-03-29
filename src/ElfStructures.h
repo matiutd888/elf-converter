@@ -17,6 +17,7 @@ namespace ElfStructures {
     struct Symbol {
     private:
         static constexpr Elf_Word specialUnhandledSections[1] = {SHN_COMMON};
+        static const size_t INITIAL_ENTRY = 0;
 
     public:
         size_t tableIndex;
@@ -49,10 +50,15 @@ namespace ElfStructures {
             return (type == STT_FILE) || isExternal(sectionIndex);
         }
 
-        static bool isSpecialUnhandled(Elf_Half sectionIndex) {
+        bool isZeroEntry() const {
+            return tableIndex == INITIAL_ENTRY;
+        }
+
+        bool shouldNotBeHandled() const {
+            auto s = sectionIndex;
             return std::ranges::any_of(
                     specialUnhandledSections,
-                    [sectionIndex](Elf_Word x) -> bool { return x == sectionIndex; });
+                    [s](Elf_Word x) -> bool { return x == s; });
         }
 
         bool isFunction() const { return type == STT_FUNC; }

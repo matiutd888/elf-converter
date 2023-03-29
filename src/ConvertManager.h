@@ -229,12 +229,11 @@ class ConvertManager {
                 zerror("Error getting symbol entry");
             }
             mDebug << s << std::endl;
-            if (s.isExternal()) {
+            if (s.shouldNotBeHandled()) {
+                mWarn << "symbols from section " << s.sectionIndex << "are not handled " << std::endl;
+            } else if (s.isExternal()) {
                 mWarn << "symbol is external, will not do anything" << std::endl;
                 externalSymbols.push_back(s);
-            } else if (ElfStructures::Symbol::isSpecialUnhandled(s.sectionIndex)) {
-                mWarn << "symbols from section " << s.sectionIndex << "are not handled "
-                      << std::endl;
             } else {
                 auto sit = sectionManagers.find(s.sectionIndex);
                 if (sit != sectionManagers.end()) {
@@ -359,7 +358,7 @@ public:
         // to będzie trzeba te symbole rówbnież przekaząźć builderowi
         for (auto &it: sectionManagers) {
             mDebug << it.first << ": ";
-            if (it.second.getOriginalSection()->get_type() == SHT_NULL) {
+            if (it.second.getOriginalSection()->get_type() == SHN_UNDEF) {
                 mDebug << "not converting null section " << std::endl;
             } else if (it.second.getOriginalSection()->get_type() == SHT_SYMTAB) {
                 mDebug << "not converting symtab section " << std::endl;

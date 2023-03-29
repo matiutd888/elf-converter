@@ -11,14 +11,6 @@ int main(int argc, char **argv) {
         std::cout << "Usage: converter <elf_file> <output-file>" << std::endl;
         return 1;
     }
-//    elfio reader;
-
-//    if (!reader.load(argv[1])) {
-//        std::cout << "Can't find or process ELF file " << argv[1] << std::endl;
-//    }
-//
-//    std::cout << reader.get_elf_version() << std::endl;
-
     ConvertManager manager(argv[1]);
     manager.convert(argv[2]);
 }
