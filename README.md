@@ -25,6 +25,8 @@ W rozwiązanie składa się z trzech faz
 #### Uwagi
 1. Zakładam, że nie ma jumpów do "środka" prologu lub epilogu. Skoczyć można jedynie na początek tych fragmentów.
 2. Zakładam, że jest co najwyżej jedna sekcja relokacji dla danej sekcji.
+3. Reszta przyjętych założeń jest widoczna w warunkach asercji, które są zostawione w kodzie.
+4. Domyślnie warningi oraz debug logi są włączone. By je wyłączyć należy ustawić makro `M_DEBUG` w pliku _src.Utils.h_ na `false`.
 
 ### Uruchamianie
 Należy pobrać odpowiednie biblioteki, <em>Capstone</em>, <em>Keystone</em> oraz _elfio_

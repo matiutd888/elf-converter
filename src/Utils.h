@@ -10,8 +10,9 @@
 #include <capstone/capstone.h>
 #include <iostream>
 
-#define mDebug (std::cout << "DEBUG: ")
-#define mWarn (std::cout << "WARN: ")
+#define M_DEBUG true
+#define mDebug if (M_DEBUG) std::cout << "DEBUG: "
+#define mWarn if (M_DEBUG) std::cout << "WARN: "
 
 #define zerror(I, ...)                 \
     fprintf(stderr, I, ##__VA_ARGS__); \

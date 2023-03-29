@@ -90,7 +90,7 @@ public:
 
     void addSymbol(const ElfStructures::Symbol &symbol) {
         if (symbol.isSection()) {
-            mWarn << symbol << std::endl;
+            mDebug << "Adding section symbol " << symbol << std::endl;
             originalSectionData.sectionSymbol = symbol;
         } else if (symbol.isSymbolWithLocation()) {
             originalSectionData.symbolsWithLocations.push_back(symbol);
@@ -216,7 +216,7 @@ class ConvertManager {
             if (s.shouldNotBeHandled()) {
                 mWarn << "symbols from section " << s.sectionIndex << "are not handled " << std::endl;
             } else if (s.isExternal()) {
-                mWarn << "symbol is external, will not do anything" << std::endl;
+                mDebug << "symbol is external, will not do anything" << std::endl;
                 externalSymbols.push_back(s);
             } else {
                 auto sit = sectionManagers.find(s.sectionIndex);
