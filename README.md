@@ -17,7 +17,7 @@ W rozwiązanie składa się z trzech faz
    1. Posortuj relokacje jej dotyczące (po offsetcie) 
    2. Posortuj symbole jej dotyczące (po offsetcie)
    3. Przetwarzaj dane sekcji od adresu `0` w górę - dopóki się nie skończy
-      1. Weź maksymalny spójny fragment sekcji niezawierający w sobie funkcji - popraw relokacje oraz symbole w nim występujące - wysrarczy poprawić offsety oraz typy relokacji (zakłądamy że będziemy natrafiać w takim fragmencie jedynie na symbole typu `STT_NOTYPE` oraz `STT_OBJECT`) oraz przepisz jej dane do wynikowego ELFa (chyba że sekcja ma typ `NO_BITS` :) )
+      1. Weź maksymalny spójny fragment sekcji niezawierający w sobie funkcji - popraw relokacje oraz symbole w nim występujące - wysrarczy poprawić offsety oraz typy relokacji (zakłądamy że będziemy natrafiać w takim fragmencie jedynie na symbole typu `STT_NOTYPE` oraz `STT_OBJECT`) oraz przepisz jej dane do wynikowego ELFa (chyba że sekcja ma typ `SHT_NOBITS` :) )
       2. Weź funkcję, popraw ją zgodnie z wytycznymi z polecenia, zapisz w jej dane w wynikowej sekcji (ustaw dla nowych relokacji odpowiedni adres w nowej sekcji, nie poprawiaj indeksu symbolu, zrobisz to później)
 3. Kiedy przetworzysz każdą sekcję, stwórz sekcję symboli. Zapisz tam każdy przetworzony symbol. Gdy to zrobisz, popraw indeksy symboli we wszystkich relokacjach, tak by dotyczyły symboli w nowym pliku Elf.
 4. Stwórz ostateczny plik Elf.
