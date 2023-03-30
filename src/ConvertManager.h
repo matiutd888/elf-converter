@@ -340,7 +340,7 @@ public:
         // to będzie trzeba te symbole rówbnież przekaząźć builderowi
         for (auto &it: sectionManagers) {
             mDebug << it.first << ": ";
-            if (it.second.getOriginalSection()->get_type() == SHN_UNDEF) {
+            if (it.second.getOriginalSection()->get_index() == SHN_UNDEF) {
                 mDebug << "not converting null section " << std::endl;
             } else if (it.second.getOriginalSection()->get_type() == SHT_SYMTAB) {
                 mDebug << "not converting symtab section " << std::endl;
