@@ -1,3 +1,7 @@
+# Elf ET_REL files converter
+Program which converts `ET_REL` x86_64 files to `ET_REL` AArch64 files, written for _Advanced topics in operating systems_ University Course.
+Below you can find a content of _README.md_ that was submitted as a part of the solution.
+
 ## Zadanie 1: Konwerter plików binarnych
 ###### Mateusz Nowakowski, ZSO 2022/23
 ### Opis rozwiązania
